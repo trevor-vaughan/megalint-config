@@ -1,0 +1,126 @@
+---
+name: 'MegaLinter (shared config)'
+description: >-
+  Run MegaLinter with the shared config from trevor-vaughan/megalint-config
+  against a working directory. The caller is responsible for checkout,
+  artifact upload, and SARIF upload to Code Scanning.
+author: 'Trevor Vaughan'
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+inputs:
+  working-directory:
+    description: 'Directory to lint. Defaults to GITHUB_WORKSPACE.'
+    required: false
+    default: ${{ github.workspace }}
+  validate-all-codebase:
+    description: 'Forwarded to MegaLinter as VALIDATE_ALL_CODEBASE.'
+    required: false
+    default: 'false'
+  megalinter-image:
+    description: 'MegaLinter container image to run.'
+    required: false
+    default: 'ghcr.io/oxsecurity/megalinter:v9'
+  reports-dir:
+    description: >-
+      Where reports land on host after the run. Defaults to
+      <working-directory>/megalinter-reports. Action moves reports there
+      post-run if it differs from the default.
+    required: false
+    default: ''
+  pull-policy:
+    description: 'Engine --pull= policy: always | missing | never.'
+    required: false
+    default: 'missing'
+
+outputs:
+  reports-dir:
+    description: 'Resolved absolute path to the reports directory.'
+    value: ${{ steps.publish.outputs.reports-dir }}
+  sarif-file:
+    description: 'Absolute path to megalinter-report.sarif inside reports-dir.'
+    value: ${{ steps.publish.outputs.sarif-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Task
+      uses: arduino/setup-task@v2
+      with:
+        repo-token: ${{ github.token }}
+
+    - name: Resolve reports-dir
+      id: resolve
+      shell: bash
+      env:
+        INPUT_WORKING_DIR: ${{ inputs.working-directory }}
+        INPUT_REPORTS_DIR: ${{ inputs.reports-dir }}
+      run: |
+        set -euo pipefail
+        working_dir="${INPUT_WORKING_DIR}"
+        reports="${INPUT_REPORTS_DIR}"
+        if [ -z "${reports}" ]; then
+          reports="${working_dir}/megalinter-reports"
+        fi
+        # Normalize to absolute path (does not require the dir to exist)
+        reports_abs="$(realpath -m "${reports}")"
+        default_abs="$(realpath -m "${working_dir}/megalinter-reports")"
+        echo "reports=${reports_abs}" >> "$GITHUB_OUTPUT"
+        echo "default=${default_abs}" >> "$GITHUB_OUTPUT"
+
+    - name: Run MegaLinter via shared Taskfile
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        VALIDATE_ALL_CODEBASE: ${{ inputs.validate-all-codebase }}
+        GITHUB_TOKEN: ${{ github.token }}
+        INPUT_WORKING_DIR: ${{ inputs.working-directory }}
+        INPUT_MEGALINTER_IMAGE: ${{ inputs.megalinter-image }}
+        INPUT_PULL_POLICY: ${{ inputs.pull-policy }}
+      run: |
+        set -euo pipefail
+        task -y megalint:run \
+          TARGET="${INPUT_WORKING_DIR}" \
+          MEGALINTER_IMAGE="${INPUT_MEGALINTER_IMAGE}" \
+          PULL_POLICY="${INPUT_PULL_POLICY}"
+
+    - name: Relocate reports if requested
+      if: ${{ always() }}
+      shell: bash
+      env:
+        RESOLVE_DEFAULT: ${{ steps.resolve.outputs.default }}
+        RESOLVE_REPORTS: ${{ steps.resolve.outputs.reports }}
+        INPUT_WORKING_DIR: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        default="${RESOLVE_DEFAULT}"
+        target="${RESOLVE_REPORTS}"
+        working_dir="${INPUT_WORKING_DIR}"
+
+        # Always move the log into the default reports-dir first (if both exist),
+        # so the log travels with the reports regardless of relocation.
+        if [ -f "${working_dir}/mega-linter.log" ] && [ -d "${default}" ]; then
+          mv "${working_dir}/mega-linter.log" "${default}/"
+        fi
+
+        # Then optionally relocate the whole reports-dir to a non-default target.
+        # Guard with -d so a MegaLinter crash before reports were written doesn't
+        # mask the original failure with a missing-source mv error.
+        if [ "${default}" != "${target}" ] && [ -d "${default}" ]; then
+          mkdir -p "$(dirname "${target}")"
+          rm -rf "${target}"
+          mv "${default}" "${target}"
+        fi
+
+    - name: Publish outputs
+      id: publish
+      if: ${{ always() }}
+      shell: bash
+      env:
+        RESOLVE_REPORTS: ${{ steps.resolve.outputs.reports }}
+      run: |
+        set -euo pipefail
+        target="${RESOLVE_REPORTS}"
+        echo "reports-dir=${target}" >> "$GITHUB_OUTPUT"
+        echo "sarif-file=${target}/megalinter-report.sarif" >> "$GITHUB_OUTPUT"

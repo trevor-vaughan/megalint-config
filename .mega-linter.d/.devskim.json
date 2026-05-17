@@ -1,0 +1,23 @@
+{
+  "RespectGitIgnore": true,
+  "Globs": [
+    "**/.git/**",
+    "**/bin/**",
+    "**/.venv/**",
+    "**/venv/**",
+    "**/__pycache__/**",
+    "**/node_modules/**",
+    "**/megalinter-reports/**",
+    "**/.pytest_cache/**",
+    "**/.ruff_cache/**",
+    "**/.specify/**",
+    "**/.opencode/**",
+    "**/.claude/**",
+    "**/.uf/**",
+    "**/.test-output/**"
+  ],
+  "IgnoreRuleIds": [
+    "DS137138",
+    "DS162092"
+  ]
+}

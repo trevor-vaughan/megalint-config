@@ -1,0 +1,16 @@
+# https://taskfile.dev
+version: '3'
+
+vars:
+  CONTAINER_ENGINE:
+    sh: 'command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"'
+
+includes:
+  megalint: ./.taskfiles/megalint.yml
+  test: ./.taskfiles/test.yml
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true

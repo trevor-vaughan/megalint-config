@@ -1,0 +1,12 @@
+{
+  "threshold": 5,
+  "reporters": ["console"],
+  "ignore": [
+    "**/api/gen/**",
+    "**/.build/**",
+    "**/.claude/**",
+    "**/.opencode/**",
+    "**/.test-output/**",
+    "**/megalinter-reports/**"
+  ]
+}

@@ -1,0 +1,113 @@
+# =============================================================================
+# .gitignore
+# =============================================================================
+#
+# Note: MegaLinter is configured with IGNORE_GITIGNORED_FILES: true, so any
+# path listed here is also skipped by the linter. Keep this file curated.
+#
+# Layout: entries are grouped by purpose. Add new entries to the matching
+# section, alphabetised within the section, with a one-line comment if the
+# purpose is not self-evident.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# MegaLinter outputs
+# -----------------------------------------------------------------------------
+# Generated on every local or CI run; SARIF, logs, and per-linter reports.
+megalinter-reports/
+mega-linter.log
+
+
+# -----------------------------------------------------------------------------
+# Test artifacts
+# -----------------------------------------------------------------------------
+# Convention: all test output (logs, coverage, fixtures) lives under this dir.
+.test-output/
+
+
+# -----------------------------------------------------------------------------
+# AI assistant & agent tooling (local-only, never committed)
+# -----------------------------------------------------------------------------
+# These directories hold per-developer configuration for AI coding assistants.
+# Mirrors ADDITIONAL_EXCLUDED_DIRECTORIES in .mega-linter.yml.
+.agents/
+.claude/
+.cursor/
+.opencode/
+.specify/
+.uf/
+
+
+# -----------------------------------------------------------------------------
+# Python
+# -----------------------------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+
+# -----------------------------------------------------------------------------
+# Terraform
+# -----------------------------------------------------------------------------
+# Local state, plan files, and provider caches must never be committed.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+# Allow shared variable definitions; ignore developer overrides.
+*.auto.tfvars
+*.auto.tfvars.json
+
+
+# -----------------------------------------------------------------------------
+# IDE & editor files
+# -----------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+
+# -----------------------------------------------------------------------------
+# Operating system noise
+# -----------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+
+# -----------------------------------------------------------------------------
+# Secrets & local environment
+# -----------------------------------------------------------------------------
+# Catch-all for accidentally generated credential files. Real secrets should
+# never be created in the repo in the first place — this is a safety net.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+
+# -----------------------------------------------------------------------------
+# Implementation-time notes (local-only, never committed)
+# -----------------------------------------------------------------------------
+# Version verification notes written during plan execution; safe to delete
+# once all dependent tasks (2, 3, 4) are complete.
+.verified-versions.txt

@@ -1,0 +1,191 @@
+# https://taskfile.dev
+# Naming convention: the primary tasks are named "install", "uninstall", "dry-run",
+# and "uninstall-dry-run" (no sub-namespace) so that the top-level Taskfile.yml
+# include with key "install:" exposes them as:
+#   task install:install       → real install
+#   task install:uninstall     → real uninstall
+#   task install:dry-run       → install preview
+#   task install:uninstall-dry-run → uninstall preview
+# The top-level Taskfile.yml delegates `task install` → `task install:install`
+# and `task uninstall` → `task install:uninstall`.
+version: '3'
+
+vars:
+  # SCOPE: user | system | auto (default auto → detect from UID)
+  SCOPE: '{{.SCOPE | default "auto"}}'
+  # PREFIX: override install prefix; empty means auto-select per scope
+  PREFIX: '{{.PREFIX | default ""}}'
+  # DRY_RUN: 0 | 1
+  DRY_RUN: '{{.DRY_RUN | default "0"}}'
+
+tasks:
+  install:
+    desc: "Install hook, hook config, and pdils (scope: auto|user|system; supports PREFIX, DRY_RUN)"
+    deps:
+      - task: build-if-missing
+    cmds:
+      - |
+        # Resolve scope
+        _scope="{{.SCOPE}}"
+        if [ "$_scope" = "auto" ]; then
+          if [ "$(id -u)" = "0" ]; then
+            _scope="system"
+          else
+            _scope="user"
+          fi
+        fi
+
+        # Resolve prefix and derived paths
+        _prefix="{{.PREFIX}}"
+        if [ -z "$_prefix" ]; then
+          if [ "$_scope" = "system" ]; then
+            _prefix="/usr/local"
+          else
+            _prefix="$HOME/.local"
+          fi
+        fi
+
+        if [ "$_scope" = "system" ]; then
+          _libexec="${_prefix}/lib/podman-image-lastused"
+          _hook_config_dir="/etc/containers/oci/hooks.d"
+          _bin_dir="${_prefix}/bin"
+        else
+          _libexec="$HOME/.local/lib/podman-image-lastused"
+          _hook_config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/containers/oci/hooks.d"
+          _bin_dir="$HOME/.local/bin"
+        fi
+
+        _hook_install="${_libexec}/hook"
+        _hook_config_path="${_hook_config_dir}/podman-image-lastused.json"
+        _bin_path="${_bin_dir}/pdils"
+        _dry="{{.DRY_RUN}}"
+
+        echo "==> Install plan (scope=${_scope})"
+        echo "    hook:        ${_hook_install}"
+        echo "    hook config: ${_hook_config_path}"
+        echo "    pdils:       ${_bin_path}"
+
+        if [ "$_dry" = "1" ]; then
+          echo ""
+          echo "[dry-run] no files written"
+          exit 0
+        fi
+
+        # Create directories
+        mkdir -p "${_libexec}"
+        mkdir -p "${_hook_config_dir}"
+        mkdir -p "${_bin_dir}"
+
+        # Install hook script
+        cp hook/podman-image-lastused-hook "${_hook_install}"
+        chmod 0755 "${_hook_install}"
+        echo "    installed: ${_hook_install}"
+
+        # Render and install hook config (use | delimiter to handle slashes in path)
+        sed "s|__HOOK_PATH__|${_hook_install}|g" hook/podman-image-lastused.json.in > "${_hook_config_path}"
+        chmod 0644 "${_hook_config_path}"
+        echo "    installed: ${_hook_config_path}"
+
+        # Install pdils CLI
+        cp bin/pdils "${_bin_path}"
+        chmod 0755 "${_bin_path}"
+        echo "    installed: ${_bin_path}"
+
+        # Verify hook config is valid JSON
+        if command -v jq >/dev/null 2>&1; then
+          jq . "${_hook_config_path}" > /dev/null && echo "    verified:  ${_hook_config_path} is valid JSON"
+        fi
+
+        echo "==> Install complete"
+
+  uninstall:
+    desc: "Remove hook, hook config, and pdils; preserve journal"
+    cmds:
+      - |
+        # Resolve scope
+        _scope="{{.SCOPE}}"
+        if [ "$_scope" = "auto" ]; then
+          if [ "$(id -u)" = "0" ]; then
+            _scope="system"
+          else
+            _scope="user"
+          fi
+        fi
+
+        # Resolve prefix and derived paths (must mirror install exactly)
+        _prefix="{{.PREFIX}}"
+        if [ -z "$_prefix" ]; then
+          if [ "$_scope" = "system" ]; then
+            _prefix="/usr/local"
+          else
+            _prefix="$HOME/.local"
+          fi
+        fi
+
+        if [ "$_scope" = "system" ]; then
+          _libexec="${_prefix}/lib/podman-image-lastused"
+          _hook_config_dir="/etc/containers/oci/hooks.d"
+          _bin_dir="${_prefix}/bin"
+        else
+          _libexec="$HOME/.local/lib/podman-image-lastused"
+          _hook_config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/containers/oci/hooks.d"
+          _bin_dir="$HOME/.local/bin"
+        fi
+
+        _hook_install="${_libexec}/hook"
+        _hook_config_path="${_hook_config_dir}/podman-image-lastused.json"
+        _bin_path="${_bin_dir}/pdils"
+        _state_dir="${PIL_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/podman-image-lastused}"
+        _dry="{{.DRY_RUN}}"
+
+        echo "==> Uninstall plan (scope=${_scope})"
+        echo "    hook:        ${_hook_install}"
+        echo "    hook config: ${_hook_config_path}"
+        echo "    pdils:       ${_bin_path}"
+        echo "    journal:     ${_state_dir}/events.jsonl (preserved)"
+
+        if [ "$_dry" = "1" ]; then
+          echo ""
+          echo "[dry-run] no files removed"
+          exit 0
+        fi
+
+        rm -f "${_hook_install}"
+        echo "    removed: ${_hook_install}"
+
+        rm -f "${_hook_config_path}"
+        echo "    removed: ${_hook_config_path}"
+
+        rm -f "${_bin_path}"
+        echo "    removed: ${_bin_path}"
+
+        # Remove libexec dir only if now empty
+        rmdir "${_libexec}" 2>/dev/null && echo "    removed dir: ${_libexec}" || :
+
+        echo "    preserved: ${_state_dir}/events.jsonl (journal intact)"
+        echo "==> Uninstall complete"
+
+  dry-run:
+    desc: "Preview install actions without writing any files"
+    cmds:
+      - task: install
+        vars:
+          DRY_RUN: "1"
+          SCOPE: '{{.SCOPE}}'
+          PREFIX: '{{.PREFIX}}'
+
+  uninstall-dry-run:
+    desc: "Preview uninstall actions without removing any files"
+    cmds:
+      - task: uninstall
+        vars:
+          DRY_RUN: "1"
+          SCOPE: '{{.SCOPE}}'
+          PREFIX: '{{.PREFIX}}'
+
+  build-if-missing:
+    desc: "Build pdils if bin/pdils does not exist"
+    cmds:
+      - task: build
+    status:
+      - test -f bin/pdils
