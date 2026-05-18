@@ -129,6 +129,17 @@ REPOSITORY_KICS_ARGUMENTS:
   - "--no-color"
   - "--fail-on=high,medium"
 
+# Checkov: skip the `github` framework. It activates whenever GITHUB_TOKEN is
+# present (i.e. every GitHub Actions run), calls the GitHub API for branch
+# protection rules, and tries to persist the response to /tmp/lint/github_conf/.
+# That mount is read-only when APPLY_FIXES=none, so Checkov crashes with
+# OSError(EROFS) and corrupts its SARIF output with a Python traceback.
+# GitHub Actions workflow YAMLs are a separate framework (github_actions)
+# and remain scanned.
+REPOSITORY_CHECKOV_ARGUMENTS:
+  - "--skip-framework"
+  - "github"
+
 # DevSkim: Rule and path exclusions are in .devskim.json. In this repo it
 # lives in .mega-linter.d/ and is overlaid at the workspace root by the runner.
 REPOSITORY_DEVSKIM_CONFIG_FILE: .devskim.json
