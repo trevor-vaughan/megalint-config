@@ -2,6 +2,9 @@ version: '3'
 
 vars:
   MEGALINTER_IMAGE: '{{.MEGALINTER_IMAGE | default "ghcr.io/oxsecurity/megalinter:v9"}}'
+  TARGET: '{{.TARGET | default .ROOT_DIR}}'
+  APPLY_FIXES: '{{.APPLY_FIXES | default "none"}}'
+  PULL_POLICY: '{{.PULL_POLICY | default "never"}}'
 
 tasks:
   default:
@@ -22,13 +25,10 @@ tasks:
     desc: 'Run MegaLinter against TARGET (default: this repo). APPLY_FIXES=all to auto-fix.'
     deps: [pull]
     vars:
-      TARGET: '{{.TARGET | default .ROOT_DIR}}'
-      APPLY_FIXES: '{{.APPLY_FIXES | default "none"}}'
-      PULL_POLICY: '{{.PULL_POLICY | default "never"}}'
       VALIDATE_ALL_CODEBASE: '{{.VALIDATE_ALL_CODEBASE | default ""}}'
-    # Surface VALIDATE_ALL_CODEBASE as a Task var that maps to the env var
-    # the runner script already forwards. Lets `megalint:changed` set it via
-    # `task: run, vars: …` (Task v3 does not propagate `env:` across calls).
+    # VALIDATE_ALL_CODEBASE is forwarded as an env var because the runner
+    # script checks for it. Other common vars (TARGET, APPLY_FIXES,
+    # PULL_POLICY) are defined at the top level and accessible to all tasks.
     env:
       VALIDATE_ALL_CODEBASE: '{{.VALIDATE_ALL_CODEBASE}}'
     cmds:
@@ -36,7 +36,7 @@ tasks:
       # runs regardless of the lint result, so findings stay processable
       # even when the lint exits non-zero. sarif-chunk no-ops gracefully
       # when no SARIF was produced.
-      - defer: {task: sarif-chunk, vars: {TARGET: '{{.TARGET}}'}}
+      - defer: {task: sarif-chunk}
       - >-
         bash "{{.TASKFILE_DIR}}/scripts/megalint-run.sh"
         "{{.ROOT_DIR}}"
@@ -55,8 +55,6 @@ tasks:
 
   sarif-open:
     desc: 'Filter SARIF report to only include runs with findings (honours TARGET)'
-    vars:
-      TARGET: '{{.TARGET | default .ROOT_DIR}}'
     cmds:
       - echo "Filtering SARIF report to only show linters with findings..."
       - jq '. | .runs = [.runs[] | select((.results // []) | length > 0)]' "{{.TARGET}}/megalinter-reports/megalinter-report.sarif" > "{{.TARGET}}/megalinter-reports/megalinter-report-open.sarif"
@@ -64,6 +62,4 @@ tasks:
 
   sarif-chunk:
     desc: 'Split SARIF report into per-linter markdown files for LLM consumption (honours TARGET)'
-    vars:
-      TARGET: '{{.TARGET | default .ROOT_DIR}}'
     cmd: bash "{{.TASKFILE_DIR}}/scripts/megalint-sarif-chunk.sh" "{{.TARGET}}"

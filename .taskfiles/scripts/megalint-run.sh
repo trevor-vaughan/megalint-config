@@ -43,6 +43,8 @@
 #   - APPLY_FIXES=none (default): workspace mounted read-only with a
 #     nested read-write mount of `megalinter-reports/` so MegaLinter can
 #     still write findings without being able to modify anything else.
+#     A tmpfs is mounted at /tmp inside the container for tool caches
+#     (ruff, checkov, etc.) that need writable temp space.
 #   - APPLY_FIXES != "none": workspace mounted read-write so MegaLinter
 #     can rewrite source files in place.
 #
@@ -215,6 +217,16 @@ if [[ "${apply_fixes}" == "none" ]]; then
 	mounts=(
 		-v "${workspace}:/tmp/lint:ro,z"
 		-v "${workspace}/megalinter-reports:/tmp/lint/megalinter-reports:rw,z"
+		--tmpfs /tmp:rw,exec,nosuid,nodev,size=4G
+	)
+	# Configure tools to use the writable tmpfs for caches instead of
+	# the read-only workspace. TMPDIR is the POSIX standard; the others
+	# are tool-specific.
+	env_args+=(
+		-e "TMPDIR=/tmp"
+		-e "RUFF_CACHE_DIR=/tmp/ruff-cache"
+		-e "XDG_CACHE_HOME=/tmp/xdg-cache"
+		-e "CKV_GITHUB_CONF_DIR_PATH=/tmp/checkov-github-conf"
 	)
 else
 	mounts=(-v "${workspace}:/tmp/lint:rw,z")
