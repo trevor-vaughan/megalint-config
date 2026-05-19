@@ -214,6 +214,7 @@ shopt -u nullglob dotglob
 
 # Mount strategy.
 if [[ "${apply_fixes}" == "none" ]]; then
+	# shellcheck disable=SC2054 # commas are mount-option syntax, not array separators
 	mounts=(
 		-v "${workspace}:/tmp/lint:ro,z"
 		-v "${workspace}/megalinter-reports:/tmp/lint/megalinter-reports:rw,z"
@@ -222,11 +223,21 @@ if [[ "${apply_fixes}" == "none" ]]; then
 	# Configure tools to use the writable tmpfs for caches instead of
 	# the read-only workspace. TMPDIR is the POSIX standard; the others
 	# are tool-specific.
+	#
+	# Checkov quirk (verified against checkov 3.2.529, the version
+	# bundled with megalinter:v9): Github.setup_conf_dir() in
+	# checkov/github/dal.py ignores CKV_GITHUB_CONF_DIR_PATH and
+	# computes the directory as os.path.join(os.getcwd(),
+	# CKV_GITHUB_CONF_DIR_NAME). When the workspace is mounted
+	# read-only at /tmp/lint, the default name `github_conf` resolves
+	# to `/tmp/lint/github_conf` and persist_all_confs() crashes with
+	# EROFS. POSIX os.path.join(a, b) returns b when b is absolute, so
+	# we abuse the NAME slot to inject an absolute path on the tmpfs.
 	env_args+=(
 		-e "TMPDIR=/tmp"
 		-e "RUFF_CACHE_DIR=/tmp/ruff-cache"
 		-e "XDG_CACHE_HOME=/tmp/xdg-cache"
-		-e "CKV_GITHUB_CONF_DIR_PATH=/tmp/checkov-github-conf"
+		-e "CKV_GITHUB_CONF_DIR_NAME=/tmp/checkov-github-conf"
 	)
 else
 	mounts=(-v "${workspace}:/tmp/lint:rw,z")

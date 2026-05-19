@@ -142,9 +142,10 @@ REPOSITORY_KICS_ARGUMENTS:
   - "--fail-on=high,medium"
 
 # Checkov: No special arguments needed. The `github_configuration` framework
-# now works correctly with the tmpfs mount strategy (see megalint-run.sh).
-# CKV_GITHUB_CONF_DIR_PATH is set to /tmp/checkov-github-conf which is on
-# the writable tmpfs when APPLY_FIXES=none.
+# works on the read-only workspace mount because megalint-run.sh sets
+# CKV_GITHUB_CONF_DIR_NAME (NOT _PATH — Checkov ignores _PATH and recomputes
+# it from cwd + _NAME, so we feed _NAME an absolute path on the tmpfs). See
+# megalint-run.sh for the full explanation.
 
 # DevSkim: Rule and path exclusions are in .devskim.json. In this repo it
 # lives in .mega-linter.d/ and is overlaid at the workspace root by the runner.
@@ -155,13 +156,6 @@ REPOSITORY_DEVSKIM_CONFIG_FILE: .devskim.json
 REPOSITORY_SECRETLINT_ARGUMENTS:
   - "--secretlintignore"
   - ".secretlintignore"
-
-# GitHub Actions: Exclude problematic workflow causing hangs
-# reusable_crapload_analysis.yml line 95 contains a complex shell pipeline:
-# PACKAGES=$(echo "$CHANGED_FILES" | xargs -I{} dirname {} | grep -v '/vendor/' | grep -v '^vendor' | sort -u | sed 's|^|./|' | paste -sd ' ')
-# This 6-command pipeline with custom xargs flags causes actionlint to hang indefinitely.
-# The workflow is functionally correct per GitHub's native validation.
-ACTION_FILTER_REGEX_EXCLUDE: "reusable_crapload_analysis\\.yml"
 
 # =============================================================================
 # Development/Debugging (uncomment as needed)

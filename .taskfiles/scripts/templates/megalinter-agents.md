@@ -14,7 +14,7 @@ This directory contains MegaLinter findings split by linter. Each markdown file 
      description: "Fix yamllint findings",
      subagent_type: "general-purpose",
      model: "<choose-based-on-complexity>",  // See Model Selection below
-     prompt: "Fix all yamllint issues in megalinter-reports/megalinter-report-chunked/yamllint.md. Follow the workflow in AGENTS.md in that directory. Test with 'task megalint:run' and commit when passing."
+     prompt: "Fix all yamllint issues in megalinter-reports/megalinter-report-chunked/yamllint.md. Follow the workflow in AGENTS.md in that directory. Review and validate your fixes, then commit."
    })
    ```
 
@@ -26,17 +26,10 @@ This directory contains MegaLinter findings split by linter. Each markdown file 
 3. **Sub-agent workflow** (each agent follows this):
    - Read the assigned linter file
    - Fix all findings in that file
-   - Review your work for correctness
-   - Commit once passing
-   - Report completion
-
-4. **After ALL sub-agents complete** — re-run the pipeline:
-   ```bash
-   task megalint:run             # Full scan
-   task megalint:sarif-chunk     # Re-chunk by linter
-   ```
-
-5. **Repeat** — spawn sub-agents for remaining linter files until all findings are addressed
+   - Review your work for correctness by re-reading affected files and validating changes
+   - Perform independent validation: verify each fix addresses the original finding without introducing new issues
+   - Commit fixes with clear description
+   - Report completion with summary of fixes applied
 
 ### Project Constraints
 

@@ -64,3 +64,37 @@ teardown() {
   run bash "${RUNNER}" a b c d e f g
   [ "$status" -eq 2 ]
 }
+
+# Regression: Checkov 3.x's Github.setup_conf_dir() ignores
+# CKV_GITHUB_CONF_DIR_PATH and computes the path as os.path.join(os.getcwd(),
+# CKV_GITHUB_CONF_DIR_NAME). On a read-only workspace mount that lands the
+# directory on `/tmp/lint/github_conf` and crashes with EROFS. Passing
+# CKV_GITHUB_CONF_DIR_NAME as an absolute path exploits POSIX os.path.join
+# semantics to redirect the directory onto the writable tmpfs.
+@test "runner forwards CKV_GITHUB_CONF_DIR_NAME=/tmp/checkov-github-conf when apply_fixes=none" {
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" \
+    "${TARGET}" \
+    "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" \
+    "none"
+
+  [ "$status" -eq 0 ]
+  grep -qE '^CKV_GITHUB_CONF_DIR_NAME=/tmp/checkov-github-conf$' "${ENGINE_ARGS_FILE}"
+  # The PATH variant is a no-op (Checkov overwrites it); ensure we are not
+  # advertising a knob that does nothing.
+  ! grep -qE '^CKV_GITHUB_CONF_DIR_PATH=' "${ENGINE_ARGS_FILE}"
+}
+
+@test "runner skips Checkov tmpfs env vars when apply_fixes=all (rw mount)" {
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" \
+    "${TARGET}" \
+    "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" \
+    "all"
+
+  [ "$status" -eq 0 ]
+  ! grep -qE '^CKV_GITHUB_CONF_DIR_NAME=' "${ENGINE_ARGS_FILE}"
+  ! grep -qE '^CKV_GITHUB_CONF_DIR_PATH=' "${ENGINE_ARGS_FILE}"
+}

@@ -64,7 +64,7 @@ for linter in "${sarif_linters[@]}"; do
 		"${SARIF}" >"${CHUNK_DIR}/${outname}.md"
 done
 
-if (( ${#log_linters[@]} > 0 )); then
+if ((${#log_linters[@]} > 0)); then
 	echo "Processing non-SARIF error logs..."
 	for linter_key in "${log_linters[@]}"; do
 		logfile="${REPORT_DIR}/linters_logs/${linter_key}-ERROR.log"
