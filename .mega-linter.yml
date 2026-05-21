@@ -62,9 +62,11 @@ ENABLE_LINTERS:
   # ---------------------------------------------------------------------------
   # Configuration File Formats
   # ---------------------------------------------------------------------------
-  - JSON_JSONLINT                 # JSON syntax validation
-  - YAML_YAMLLINT                 # YAML syntax validation
-  - MARKDOWN_MARKDOWNLINT         # Markdown formatting
+  - JSON_JSONLINT                      # JSON syntax validation
+  - YAML_YAMLLINT                      # YAML syntax validation
+  - MARKDOWN_MARKDOWNLINT              # Markdown formatting
+  - MARKDOWN_MARKDOWN_LINK_CHECK       # Markdown link checking
+  - MARKDOWN_MARKDOWN_TABLE_FORMATTER  # Markdown table formatting (supports auto-fix)
   - EDITORCONFIG_EDITORCONFIG_CHECKER  # Cross-editor consistency
 
   # ---------------------------------------------------------------------------
@@ -83,6 +85,7 @@ ENABLE_LINTERS:
   - REPOSITORY_DEVSKIM            # Security pattern detection
   - REPOSITORY_GRYPE              # Vulnerability scanning
   - REPOSITORY_KICS               # Infrastructure security analysis
+  - REPOSITORY_GITLEAKS           # Secrets detection
   - REPOSITORY_SECRETLINT         # Secrets detection
   - REPOSITORY_TRIVY              # Container/dependency security
   - REPOSITORY_TRUFFLEHOG         # Additional secrets detection
@@ -106,7 +109,6 @@ DISABLE_LINTERS:
 
   # Security - high false positive rate
   - PYTHON_BANDIT                 # 94 false positive assert warnings in test files
-  - REPOSITORY_GITLEAKS           # 152 false positives from test data (foo.sarif)
 
   # Other
   - REPOSITORY_KINGFISHER         # Redundant with other security tools
