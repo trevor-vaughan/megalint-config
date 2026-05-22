@@ -20,15 +20,15 @@ projects can share one linting policy.
 
 ## What's in here
 
-| Path | Purpose |
-| ---- | ------- |
-| `.mega-linter.yml` | The shared MegaLinter profile. Linters enabled, disabled, and configured. |
-| `.mega-linter.d/` | Drop-in directory for shared sub-configs (`.devskim.json`, `.jscpd.json`, `kics.config`, …). Anything here is auto-mounted into target repos at the workspace root. |
-| `Taskfile.yml` | Top-level task entrypoint. |
-| `.taskfiles/megalint.yml` | Tasks for running MegaLinter locally. |
-| `.taskfiles/scripts/megalint-run.sh` | The linter runner. Bind-mounts target + shared configs into the container. |
-| `.taskfiles/scripts/megalinter-sarif-chunk.sh` | Splits SARIF into per-linter markdown for LLM-driven remediation. |
-| `.github/workflows/megalinter.yml` | CI workflow that runs MegaLinter on every push and PR. |
+| Path                                           | Purpose                                                                                                                                                             |
+|------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `.mega-linter.yml`                             | The shared MegaLinter profile. Linters enabled, disabled, and configured.                                                                                           |
+| `.mega-linter.d/`                              | Drop-in directory for shared sub-configs (`.devskim.json`, `.jscpd.json`, `kics.config`, …). Anything here is auto-mounted into target repos at the workspace root. |
+| `Taskfile.yml`                                 | Top-level task entrypoint.                                                                                                                                          |
+| `.taskfiles/megalint.yml`                      | Tasks for running MegaLinter locally.                                                                                                                               |
+| `.taskfiles/scripts/megalint-run.sh`           | The linter runner. Bind-mounts target + shared configs into the container.                                                                                          |
+| `.taskfiles/scripts/megalinter-sarif-chunk.sh` | Splits SARIF into per-linter markdown for LLM-driven remediation.                                                                                                   |
+| `.github/workflows/megalinter.yml`             | CI workflow that runs MegaLinter on every push and PR.                                                                                                              |
 
 ## Running MegaLinter
 
@@ -47,10 +47,15 @@ task
 task megalint:run
 
 # Lint only files changed vs. the default branch (HEAD diff)
+# Automatically uses .mega-linter-changed.yml override config that disables
+# repository-scoped linters for faster feedback during development
 task megalint:changed
 
 # Lint a different repo using these shared configs
 task megalint:run TARGET=/path/to/other/repo
+
+# Use specific override config
+task megalint:run TARGET=/path/to/other/repo CONFIG_FILE=".mega-linter-changed.yml"
 
 # From outside this repo
 task -d /path/to/this/repo megalint:run TARGET=$PWD
@@ -132,6 +137,43 @@ on minimal containers you may need `apt install rsync` or
 The container image is pinned to `ghcr.io/oxsecurity/megalinter:v9` —
 override with `MEGALINTER_IMAGE=...` if you need a different tag.
 
+## Config Inheritance
+
+This runner supports **MegaLinter config inheritance** using the `EXTENDS` directive to reduce maintenance overhead.
+
+### Override Configs
+
+The `.mega-linter.d/` directory contains drop-in override configurations:
+
+- `.mega-linter-changed.yml` - Optimized config for changed-files mode that disables resource-intensive repository-scoped linters
+
+### Usage
+
+Override configs are automatically copied to the target workspace root and can be referenced by filename:
+
+```bash
+# Use specific override config
+task megalint:run CONFIG_FILE=".mega-linter-changed.yml"
+
+# The megalint:changed task automatically uses the changed-files override
+task megalint:changed
+```
+
+### Creating Custom Overrides
+
+Create new override configs in `.mega-linter.d/` using the EXTENDS pattern:
+
+```yaml
+EXTENDS: .mega-linter.yml
+# Replace ENABLE_LINTERS to remove unwanted linters.
+# DISABLE_LINTERS does NOT work for linters in the parent's ENABLE_LINTERS
+# (MegaLinter checks ENABLE_LINTERS first and never evaluates DISABLE_LINTERS
+# for linters already in that list).
+ENABLE_LINTERS:
+  - LINTER_ONE
+  - LINTER_TWO
+```
+
 ## Per-target overrides
 
 A target repo can supply its own files at the workspace root to override
@@ -146,9 +188,13 @@ the shared defaults:
   # .mega-linter.local.yml in the target repo
   EXTENDS: .mega-linter.shared.yml
 
-  # Project-specific overrides go here
-  DISABLE_LINTERS:
-    - YAML_PRETTIER
+  # To remove linters, provide a replacement ENABLE_LINTERS list.
+  # DISABLE_LINTERS does NOT work for linters already in the parent's
+  # ENABLE_LINTERS (MegaLinter's activation precedence).
+  ENABLE_LINTERS:
+    - BASH_SHELLCHECK
+    - BASH_SHFMT
+    # ... (list the linters you want, omitting those you don't)
   ```
 
 - **`.mega-linter.yml`** — if the target already has its own top-level

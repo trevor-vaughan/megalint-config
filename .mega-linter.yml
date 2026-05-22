@@ -28,21 +28,23 @@ SARIF_REPORTER: true
 
 # Exclude tool directories and temporary files
 ADDITIONAL_EXCLUDED_DIRECTORIES:
-  - ".agents"          # AI agent configurations
-  - ".claude"          # Claude AI configurations
-  - ".cursor"          # Cursor IDE configurations
-  - ".mega-linter.d"   # Shared linter sub-configs (staged at workspace root by the runner)
-  - ".opencode"        # OpenCode framework
-  - ".specify"         # SpecKit framework
-  - ".test-output"     # Test artifacts
-  - ".uf"              # Unbound Force tooling
-  - ".venv"            # Python virtual environments
-  - "openspec"         # OpenSpec specifications
-  - "specs"            # SpecKit specifications
+  - ".agents" # AI agent configurations
+  - ".claude" # Claude AI configurations
+  - ".cursor" # Cursor IDE configurations
+  - ".mega-linter.d" # Shared linter sub-configs (staged at workspace root by the runner)
+  - ".opencode" # OpenCode framework
+  - ".specify" # SpecKit framework
+  - ".test-output" # Test artifacts
+  - ".uf" # Unbound Force tooling
+  - ".venv" # Python virtual environments
+  - "openspec" # OpenSpec specifications
+  - "specs" # SpecKit specifications
 
 # =============================================================================
 # Enabled Linters
 # =============================================================================
+# SYNC: when adding or removing linters below, also update the ENABLE_LINTERS
+# list in .mega-linter.d/.mega-linter-changed.yml (minus REPOSITORY_* entries).
 
 ENABLE_LINTERS:
   # ---------------------------------------------------------------------------
@@ -54,46 +56,47 @@ ENABLE_LINTERS:
   # References:
   #   - https://megalinter.io/latest/descriptors/bash_shellcheck/
   #   - https://megalinter.io/latest/descriptors/bash_shfmt/
-  - BASH_SHELLCHECK               # Shell script analysis (no auto-fix)
-  - BASH_SHFMT                    # Shell script formatting (supports auto-fix)
-  - PYTHON_RUFF                   # Modern Python linter + formatter (replaces flake8/pylint/black)
-  - PYTHON_ISORT                  # Python import sorting
+  - BASH_SHELLCHECK # Shell script analysis (no auto-fix)
+  - BASH_SHFMT # Shell script formatting (supports auto-fix)
+  - PYTHON_RUFF # Modern Python linter + formatter (replaces flake8/pylint/black)
+  - PYTHON_ISORT # Python import sorting
 
   # ---------------------------------------------------------------------------
   # Configuration File Formats
   # ---------------------------------------------------------------------------
-  - JSON_JSONLINT                      # JSON syntax validation
-  - YAML_YAMLLINT                      # YAML syntax validation
-  - MARKDOWN_MARKDOWNLINT              # Markdown formatting
-  - MARKDOWN_MARKDOWN_LINK_CHECK       # Markdown link checking
-  - MARKDOWN_MARKDOWN_TABLE_FORMATTER  # Markdown table formatting (supports auto-fix)
-  - EDITORCONFIG_EDITORCONFIG_CHECKER  # Cross-editor consistency
+  - JSON_JSONLINT # JSON syntax validation
+  - YAML_YAMLLINT # YAML syntax validation
+  - YAML_PRETTIER # YAML formatting (supports auto-fix)
+  - MARKDOWN_MARKDOWNLINT # Markdown formatting
+  - MARKDOWN_MARKDOWN_LINK_CHECK # Markdown link checking
+  - MARKDOWN_MARKDOWN_TABLE_FORMATTER # Markdown table formatting (supports auto-fix)
+  - EDITORCONFIG_EDITORCONFIG_CHECKER # Cross-editor consistency
 
   # ---------------------------------------------------------------------------
   # Infrastructure-as-Code (valuable for org-wide reuse)
   # ---------------------------------------------------------------------------
-  - ACTION_ACTIONLINT             # GitHub Actions workflow validation
-  - DOCKERFILE_HADOLINT           # Dockerfile best practices
-  - KUBERNETES_KUBECONFORM        # Kubernetes manifest validation
-  - TERRAFORM_TFLINT              # Terraform configuration validation
-  - CLOUDFORMATION_CFN_LINT       # AWS CloudFormation validation
+  - ACTION_ACTIONLINT # GitHub Actions workflow validation
+  - DOCKERFILE_HADOLINT # Dockerfile best practices
+  - KUBERNETES_KUBECONFORM # Kubernetes manifest validation
+  - TERRAFORM_TFLINT # Terraform configuration validation
+  - CLOUDFORMATION_CFN_LINT # AWS CloudFormation validation
 
   # ---------------------------------------------------------------------------
   # Security & Compliance (multi-layer defense)
   # ---------------------------------------------------------------------------
-  - REPOSITORY_CHECKOV            # Infrastructure security scanning
-  - REPOSITORY_DEVSKIM            # Security pattern detection
-  - REPOSITORY_GRYPE              # Vulnerability scanning
-  - REPOSITORY_KICS               # Infrastructure security analysis
-  - REPOSITORY_GITLEAKS           # Secrets detection
-  - REPOSITORY_SECRETLINT         # Secrets detection
-  - REPOSITORY_TRIVY              # Container/dependency security
-  - REPOSITORY_TRUFFLEHOG         # Additional secrets detection
+  - REPOSITORY_CHECKOV # Infrastructure security scanning
+  - REPOSITORY_DEVSKIM # Security pattern detection
+  - REPOSITORY_GRYPE # Vulnerability scanning
+  - REPOSITORY_KICS # Infrastructure security analysis
+  - REPOSITORY_GITLEAKS # Secrets detection
+  - REPOSITORY_SECRETLINT # Secrets detection
+  - REPOSITORY_TRIVY # Container/dependency security
+  - REPOSITORY_TRUFFLEHOG # Additional secrets detection
 
   # ---------------------------------------------------------------------------
   # Code Quality & Documentation
   # ---------------------------------------------------------------------------
-  - COPYPASTE_JSCPD               # Copy-paste detection
+  - COPYPASTE_JSCPD # Copy-paste detection
 
 # =============================================================================
 # Disabled Linters
@@ -101,17 +104,17 @@ ENABLE_LINTERS:
 
 DISABLE_LINTERS:
   # Python - redundant with ruff
-  - PYTHON_BLACK                  # Replaced by PYTHON_RUFF (ruff format)
-  - PYTHON_FLAKE8                 # Replaced by PYTHON_RUFF
-  - PYTHON_PYLINT                 # Replaced by PYTHON_RUFF
-  - PYTHON_MYPY                   # Type checking not needed for infrastructure scripts
-  - PYTHON_PYRIGHT                # Redundant with mypy
+  - PYTHON_BLACK # Replaced by PYTHON_RUFF (ruff format)
+  - PYTHON_FLAKE8 # Replaced by PYTHON_RUFF
+  - PYTHON_PYLINT # Replaced by PYTHON_RUFF
+  - PYTHON_MYPY # Type checking not needed for infrastructure scripts
+  - PYTHON_PYRIGHT # Redundant with mypy
 
   # Security - high false positive rate
-  - PYTHON_BANDIT                 # 94 false positive assert warnings in test files
+  - PYTHON_BANDIT # 94 false positive assert warnings in test files
 
   # Other
-  - REPOSITORY_KINGFISHER         # Redundant with other security tools
+  - REPOSITORY_KINGFISHER # Redundant with other security tools
 
 # =============================================================================
 # Linter-Specific Configuration
@@ -124,7 +127,7 @@ PYTHON_RUFF_ARGUMENTS:
 # Markdown: Disable language specification requirement for code blocks
 MARKDOWN_MARKDOWNLINT_ARGUMENTS:
   - "--disable"
-  - "MD040"  # Fenced code blocks should have a language specified
+  - "MD040" # Fenced code blocks should have a language specified
 
 # Markdown: Skip AI assistant instruction files. AGENTS.md and CLAUDE.md
 # are LLM-targeted prose that follows agent-host conventions, not the

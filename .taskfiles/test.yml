@@ -1,9 +1,9 @@
 # https://taskfile.dev
-version: '3'
+version: "3"
 
 tasks:
   runner:
-    desc: 'Run bats tests for .taskfiles/scripts/*.sh'
+    desc: "Run bats tests for .taskfiles/scripts/*.sh"
     cmds:
       - bats {{.ROOT_DIR}}/tests/*.bats
 

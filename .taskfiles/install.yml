@@ -8,7 +8,7 @@
 #   task install:uninstall-dry-run → uninstall preview
 # The top-level Taskfile.yml delegates `task install` → `task install:install`
 # and `task uninstall` → `task install:uninstall`.
-version: '3'
+version: "3"
 
 vars:
   # SCOPE: user | system | auto (default auto → detect from UID)
@@ -171,8 +171,8 @@ tasks:
       - task: install
         vars:
           DRY_RUN: "1"
-          SCOPE: '{{.SCOPE}}'
-          PREFIX: '{{.PREFIX}}'
+          SCOPE: "{{.SCOPE}}"
+          PREFIX: "{{.PREFIX}}"
 
   uninstall-dry-run:
     desc: "Preview uninstall actions without removing any files"
@@ -180,8 +180,8 @@ tasks:
       - task: uninstall
         vars:
           DRY_RUN: "1"
-          SCOPE: '{{.SCOPE}}'
-          PREFIX: '{{.PREFIX}}'
+          SCOPE: "{{.SCOPE}}"
+          PREFIX: "{{.PREFIX}}"
 
   build-if-missing:
     desc: "Build pdils if bin/pdils does not exist"

@@ -69,6 +69,53 @@ Target repos can override the shared config with a `.mega-linter.local.yml`
 at their repo root that does `EXTENDS: .mega-linter.shared.yml`. See
 README for the full override model.
 
+## Config Inheritance System
+
+This repository implements **MegaLinter config inheritance** to reduce hardcoded linter management in Taskfiles.
+
+### Architecture
+
+- **Base config**: `.mega-linter.yml` (comprehensive linter configuration)
+- **Override configs**: `.mega-linter.d/` (specialized configurations that extend base, including dot-prefixed files)
+- **Runner integration**: Scripts accept optional `CONFIG_FILE` parameter
+
+### ENABLE_LINTERS vs DISABLE_LINTERS precedence
+
+MegaLinter's activation logic uses an `elif` chain where `ENABLE_LINTERS`
+is checked **before** `DISABLE_LINTERS`. Any linter present in
+`ENABLE_LINTERS` is activated unconditionally — `DISABLE_LINTERS` is
+never evaluated for it. Because the base config uses an allowlist
+(`ENABLE_LINTERS`), override configs that need to remove linters **must
+provide a replacement `ENABLE_LINTERS` list**, not add `DISABLE_LINTERS`.
+
+### For Agents
+
+When modifying MegaLinter behavior:
+
+1. **Don't edit Taskfiles** for linter configuration changes
+2. **Create override configs** in `.mega-linter.d/` using `EXTENDS` directive
+3. **To remove linters**: provide a replacement `ENABLE_LINTERS` list
+   (do NOT use `DISABLE_LINTERS` — it is ignored for linters in the
+   parent's `ENABLE_LINTERS`)
+4. **Test config inheritance** with `task megalint:run CONFIG_FILE="your-config.yml"`
+5. **Document purpose** clearly in override config comments
+
+### Available Overrides
+
+- `.mega-linter-changed.yml` - Replaces `ENABLE_LINTERS` with all REPOSITORY-scoped linters removed for faster changed-files analysis
+
+### Override Config Template
+
+```yaml
+# Purpose: Describe what this override does
+EXTENDS: .mega-linter.yml
+# Replace ENABLE_LINTERS to remove unwanted linters.
+# DISABLE_LINTERS does NOT work for linters in the parent's ENABLE_LINTERS.
+ENABLE_LINTERS:
+  - LINTER_NAME_1
+  - LINTER_NAME_2
+```
+
 ## Fixing lint findings at scale
 
 When the linter reports many findings:

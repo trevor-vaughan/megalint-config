@@ -1,45 +1,45 @@
 ---
-name: 'MegaLinter (shared config)'
+name: "MegaLinter (shared config)"
 description: >-
   Run MegaLinter with the shared config from trevor-vaughan/megalint-config
   against a working directory. The caller is responsible for checkout,
   artifact upload, and SARIF upload to Code Scanning.
-author: 'Trevor Vaughan'
+author: "Trevor Vaughan"
 branding:
-  icon: 'check-circle'
-  color: 'green'
+  icon: "check-circle"
+  color: "green"
 
 inputs:
   working-directory:
-    description: 'Directory to lint. Defaults to GITHUB_WORKSPACE.'
+    description: "Directory to lint. Defaults to GITHUB_WORKSPACE."
     required: false
     default: ${{ github.workspace }}
   validate-all-codebase:
-    description: 'Forwarded to MegaLinter as VALIDATE_ALL_CODEBASE.'
+    description: "Forwarded to MegaLinter as VALIDATE_ALL_CODEBASE."
     required: false
-    default: 'false'
+    default: "false"
   megalinter-image:
-    description: 'MegaLinter container image to run.'
+    description: "MegaLinter container image to run."
     required: false
-    default: 'ghcr.io/oxsecurity/megalinter:v9'
+    default: "ghcr.io/oxsecurity/megalinter:v9"
   reports-dir:
     description: >-
       Where reports land on host after the run. Defaults to
       <working-directory>/megalinter-reports. Action moves reports there
       post-run if it differs from the default.
     required: false
-    default: ''
+    default: ""
   pull-policy:
-    description: 'Engine --pull= policy: always | missing | never.'
+    description: "Engine --pull= policy: always | missing | never."
     required: false
-    default: 'missing'
+    default: "missing"
 
 outputs:
   reports-dir:
-    description: 'Resolved absolute path to the reports directory.'
+    description: "Resolved absolute path to the reports directory."
     value: ${{ steps.publish.outputs.reports-dir }}
   sarif-file:
-    description: 'Absolute path to megalinter-report.sarif inside reports-dir.'
+    description: "Absolute path to megalinter-report.sarif inside reports-dir."
     value: ${{ steps.publish.outputs.sarif-file }}
 
 runs:

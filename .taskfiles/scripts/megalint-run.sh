@@ -3,7 +3,7 @@
 # from this repository.
 #
 # Usage:
-#   megalint-run.sh <shared-dir> <target-dir> <engine> <image> <apply-fixes> [pull-policy]
+#   megalint-run.sh <shared-dir> <target-dir> <engine> <image> <apply-fixes> [pull-policy] [config_file]
 #
 # Two staging modes are supported:
 #
@@ -53,17 +53,21 @@
 #
 # Environment variables:
 #   MEGALINT_TMPDIR    Any non-empty value selects tempdir staging.
-#   GITHUB_TOKEN, VALIDATE_ALL_CODEBASE, GITHUB_REPOSITORY,
-#   GITHUB_RUN_ID, CI    Forwarded to the container when set on the host.
+#   GITHUB_TOKEN, VALIDATE_ALL_CODEBASE, DISABLE, DISABLE_LINTERS,
+#   GITHUB_REPOSITORY, GITHUB_RUN_ID, CI
+#                      Forwarded to the container when set on the host.
+#
+# The optional config_file argument (positional $7) sets MEGALINTER_CONFIG
+# inside the container, selecting an alternate MegaLinter configuration.
 
 set -euo pipefail
 
 usage() {
-	echo "usage: $0 <shared-dir> <target-dir> <engine> <image> <apply-fixes> [pull-policy]" >&2
+	echo "usage: $0 <shared-dir> <target-dir> <engine> <image> <apply-fixes> [pull-policy] [config_file]" >&2
 	exit 2
 }
 
-[[ $# -ge 5 && $# -le 6 ]] || usage
+[[ $# -ge 5 && $# -le 7 ]] || usage
 
 shared_raw="$1"
 target_raw="$2"
@@ -71,6 +75,7 @@ engine="$3"
 image="$4"
 apply_fixes="$5"
 pull_policy="${6:-never}"
+config_file="${7:-}"
 
 [[ -d "${shared_raw}" ]] || {
 	echo "shared dir not found: ${shared_raw}" >&2
@@ -100,6 +105,8 @@ fi
 FORWARDED_ENV_VARS=(
 	GITHUB_TOKEN
 	VALIDATE_ALL_CODEBASE
+	DISABLE
+	DISABLE_LINTERS
 	GITHUB_REPOSITORY
 	GITHUB_RUN_ID
 	CI
@@ -113,6 +120,12 @@ for var in "${FORWARDED_ENV_VARS[@]}"; do
 		env_args+=(-e "${var}=${!var}")
 	fi
 done
+
+# Set config file if provided
+if [[ -n "$config_file" ]]; then
+	env_args+=(-e "MEGALINTER_CONFIG=$config_file")
+	echo "Using config file: $config_file"
+fi
 
 # Prep step: set `workspace` (the dir to mount as /tmp/lint), `git_is_dir`
 # (whether to add a separate .git bind mount), and `staged[]` (paths
@@ -188,7 +201,15 @@ stage_in() {
 # if the target already supplies a file, the shared copy is NOT staged
 # over it. This is unconditional — a 0-byte file is treated as the
 # user's choice, not a phantom to overwrite.
-if [[ -f "${workspace}/.mega-linter.local.yml" ]]; then
+if [[ -n "$config_file" ]]; then
+	# Explicit config file takes precedence; stage base config for EXTENDS.
+	if [[ -f "${workspace}/.mega-linter.local.yml" ]]; then
+		echo "Note: ignoring .mega-linter.local.yml in favour of config_file=${config_file}" >&2
+	fi
+	if [[ ! -e "${workspace}/.mega-linter.yml" ]]; then
+		stage_in "${shared}/.mega-linter.yml" "${workspace}/.mega-linter.yml"
+	fi
+elif [[ -f "${workspace}/.mega-linter.local.yml" ]]; then
 	if [[ ! -e "${workspace}/.mega-linter.shared.yml" ]]; then
 		stage_in "${shared}/.mega-linter.yml" "${workspace}/.mega-linter.shared.yml"
 	fi
@@ -250,7 +271,7 @@ if "${git_is_dir}"; then
 fi
 
 "${engine}" run --rm \
-	--pull="${pull_policy}" \
+	"--pull=$pull_policy" \
 	"${mounts[@]}" \
 	"${env_args[@]}" \
 	"${image}"

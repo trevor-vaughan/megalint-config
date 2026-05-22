@@ -1,8 +1,8 @@
-version: '3'
+version: "3"
 
 vars:
   MEGALINTER_IMAGE: '{{.MEGALINTER_IMAGE | default "ghcr.io/oxsecurity/megalinter:v9"}}'
-  TARGET: '{{.TARGET | default .ROOT_DIR}}'
+  TARGET: "{{.TARGET | default .ROOT_DIR}}"
   APPLY_FIXES: '{{.APPLY_FIXES | default "none"}}'
   PULL_POLICY: '{{.PULL_POLICY | default "never"}}'
 
@@ -19,24 +19,25 @@ tasks:
     status:
       - test -z "{{.FORCE}}" && {{.CONTAINER_ENGINE}} image inspect {{.MEGALINTER_IMAGE}} >/dev/null 2>&1
     cmds:
-      - '{{.CONTAINER_ENGINE}} pull {{.MEGALINTER_IMAGE}}'
+      - "{{.CONTAINER_ENGINE}} pull {{.MEGALINTER_IMAGE}}"
 
   run:
-    desc: 'Run MegaLinter against TARGET (default: this repo). APPLY_FIXES=all to auto-fix.'
+    desc: "Run MegaLinter against TARGET (default: this repo). APPLY_FIXES=all to auto-fix."
     deps: [pull]
     vars:
       VALIDATE_ALL_CODEBASE: '{{.VALIDATE_ALL_CODEBASE | default ""}}'
+      CONFIG_FILE: '{{.CONFIG_FILE | default ""}}'
     # VALIDATE_ALL_CODEBASE is forwarded as an env var because the runner
     # script checks for it. Other common vars (TARGET, APPLY_FIXES,
     # PULL_POLICY) are defined at the top level and accessible to all tasks.
     env:
-      VALIDATE_ALL_CODEBASE: '{{.VALIDATE_ALL_CODEBASE}}'
+      VALIDATE_ALL_CODEBASE: "{{.VALIDATE_ALL_CODEBASE}}"
     cmds:
       # Chunk the SARIF for LLM-driven remediation after every run. `defer`
       # runs regardless of the lint result, so findings stay processable
       # even when the lint exits non-zero. sarif-chunk no-ops gracefully
       # when no SARIF was produced.
-      - defer: {task: sarif-chunk}
+      - defer: { task: sarif-chunk }
       - >-
         bash "{{.TASKFILE_DIR}}/scripts/megalint-run.sh"
         "{{.ROOT_DIR}}"
@@ -45,21 +46,23 @@ tasks:
         "{{.MEGALINTER_IMAGE}}"
         "{{.APPLY_FIXES}}"
         "{{.PULL_POLICY}}"
+        "{{.CONFIG_FILE}}"
 
   changed:
-    desc: 'Run MegaLinter only on files changed vs. the default branch (HEAD diff). Honours TARGET, APPLY_FIXES, PULL_POLICY.'
+    desc: "Run MegaLinter only on files changed vs. the default branch (HEAD diff). Excludes repository-scoped linters. Honours TARGET, APPLY_FIXES, PULL_POLICY."
     cmds:
       - task: run
         vars:
-          VALIDATE_ALL_CODEBASE: 'false'
+          VALIDATE_ALL_CODEBASE: "false"
+          CONFIG_FILE: ".mega-linter-changed.yml"
 
   sarif-open:
-    desc: 'Filter SARIF report to only include runs with findings (honours TARGET)'
+    desc: "Filter SARIF report to only include runs with findings (honours TARGET)"
     cmds:
       - echo "Filtering SARIF report to only show linters with findings..."
       - jq '. | .runs = [.runs[] | select((.results // []) | length > 0)]' "{{.TARGET}}/megalinter-reports/megalinter-report.sarif" > "{{.TARGET}}/megalinter-reports/megalinter-report-open.sarif"
       - echo "Filtered SARIF report written to {{.TARGET}}/megalinter-reports/megalinter-report-open.sarif"
 
   sarif-chunk:
-    desc: 'Split SARIF report into per-linter markdown files for LLM consumption (honours TARGET)'
+    desc: "Split SARIF report into per-linter markdown files for LLM consumption (honours TARGET)"
     cmd: bash "{{.TASKFILE_DIR}}/scripts/megalint-sarif-chunk.sh" "{{.TARGET}}"

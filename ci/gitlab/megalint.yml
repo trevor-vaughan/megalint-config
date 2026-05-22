@@ -19,33 +19,33 @@
 # see ci/gitlab/README.md for the full caller example.
 
 .megalint:
-  image: 'docker:27'
+  image: "docker:27"
   services:
-    - 'docker:27-dind'
+    - "docker:27-dind"
   variables:
-    MEGALINT_WORKING_DIRECTORY: '$CI_PROJECT_DIR'
-    MEGALINT_VALIDATE_ALL_CODEBASE: 'false'
-    MEGALINTER_IMAGE: 'ghcr.io/oxsecurity/megalinter:v9'
-    MEGALINT_REPORTS_DIR: '$CI_PROJECT_DIR/megalinter-reports'
-    MEGALINT_PULL_POLICY: 'missing'
+    MEGALINT_WORKING_DIRECTORY: "$CI_PROJECT_DIR"
+    MEGALINT_VALIDATE_ALL_CODEBASE: "false"
+    MEGALINTER_IMAGE: "ghcr.io/oxsecurity/megalinter:v9"
+    MEGALINT_REPORTS_DIR: "$CI_PROJECT_DIR/megalinter-reports"
+    MEGALINT_PULL_POLICY: "missing"
     # Pin to match the include: ref. Override in the caller if the
     # include ref differs.
-    MEGALINT_REF: 'v1'
-    DOCKER_HOST: 'tcp://docker:2375'
-    DOCKER_TLS_CERTDIR: ''
+    MEGALINT_REF: "v1"
+    DOCKER_HOST: "tcp://docker:2375"
+    DOCKER_TLS_CERTDIR: ""
   before_script:
     - apk add --no-cache bash git curl coreutils
     - git clone --depth 1 --branch "$MEGALINT_REF"
-        https://github.com/trevor-vaughan/megalint-config.git
-        /tmp/megalint-runner
+      https://github.com/trevor-vaughan/megalint-config.git
+      /tmp/megalint-runner
   script:
     - bash /tmp/megalint-runner/ci/gitlab/run.sh
   artifacts:
     when: always
     paths:
-      - '$MEGALINT_REPORTS_DIR'
+      - "$MEGALINT_REPORTS_DIR"
       # Fallback: catch the log if MegaLinter crashed before reports-dir
       # was written and run.sh couldn't move it into reports-dir.
-      - '$MEGALINT_WORKING_DIRECTORY/mega-linter.log'
+      - "$MEGALINT_WORKING_DIRECTORY/mega-linter.log"
     reports:
-      sast: '$MEGALINT_REPORTS_DIR/megalinter-report.sarif'
+      sast: "$MEGALINT_REPORTS_DIR/megalinter-report.sarif"
