@@ -1,0 +1,30 @@
+[project]
+name = "megalinter-shared-config"
+version = "0.1.0"
+description = "Shared MegaLinter configuration and custom flavor generation tooling"
+requires-python = ">=3.10"
+# Runtime deps used by scripts/ (flavor generation, validation, config parsing)
+dependencies = [
+    "jinja2>=3.1.0",
+    "pyyaml>=6.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (requiring Docker builds or external resources)",
+    "integration: marks tests as integration tests",
+]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+minversion = "6.0"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]

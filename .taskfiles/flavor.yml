@@ -1,0 +1,198 @@
+version: "3"
+
+vars:
+  MEGALINTER_VERSION: '{{.MEGALINTER_VERSION | default "9.5.0"}}'
+  MEGALINTER_CACHE_DIR: "{{.ROOT_DIR}}/.cache/megalinter-v{{.MEGALINTER_VERSION}}"
+
+tasks:
+  default:
+    silent: true
+    cmd: |
+      task --list 2>/dev/null
+
+  clone:
+    desc: "Clone MegaLinter source at pinned version for descriptor data"
+    summary: |
+      Shallow-clones the MegaLinter repo at a pinned version tag to provide
+      descriptor YAML files and the Dockerfile template for slim flavor generation.
+      Idempotent: skips if the cache directory already exists.
+
+      Variables:
+        MEGALINTER_VERSION: MegaLinter version to clone (default: 9.5.0)
+    status:
+      - test -d "{{.MEGALINTER_CACHE_DIR}}/megalinter/descriptors"
+    cmds:
+      - >-
+        git clone --depth 1 --branch "v{{.MEGALINTER_VERSION}}"
+        https://github.com/oxsecurity/megalinter.git
+        "{{.MEGALINTER_CACHE_DIR}}"
+
+  generate:
+    desc: "Generate slim custom MegaLinter flavor from upstream descriptors"
+    summary: |
+      Reads MegaLinter descriptor YAML files from the cached upstream source,
+      filters by linters enabled in .mega-linter.yml, and generates a slim
+      Dockerfile that installs only the needed linters.
+
+      Variables:
+        CONFIG_FILE: Configuration file to parse (default: .mega-linter.yml)
+        OUTPUT_DIR: Output directory for flavor files (default: ./custom-flavor)
+        FLAVOR_NAME: Name of the custom flavor (default: shared-config)
+    deps: [clone]
+    vars:
+      CONFIG_FILE: '{{.CONFIG_FILE | default ".mega-linter.yml"}}'
+      OUTPUT_DIR: '{{.OUTPUT_DIR | default "./custom-flavor"}}'
+      FLAVOR_NAME: '{{.FLAVOR_NAME | default "shared-config"}}'
+    preconditions:
+      - test -f "{{.CONFIG_FILE}}"
+    cmds:
+      - >-
+        uv run python "{{.ROOT_DIR}}/scripts/build_flavor_dockerfile.py"
+        "{{.CONFIG_FILE}}"
+        "{{.MEGALINTER_CACHE_DIR}}"
+        "{{.OUTPUT_DIR}}"
+        --flavor-name "{{.FLAVOR_NAME}}"
+        --version "{{.MEGALINTER_VERSION}}"
+
+  validate:
+    desc: "Validate generated custom flavor structure"
+    summary: |
+      Validates the generated custom flavor files for completeness and correctness.
+      Run after 'generate' or as part of the 'build' chain.
+
+      Variables:
+        FLAVOR_DIR: Directory containing flavor files (default: ./custom-flavor)
+    vars:
+      FLAVOR_DIR: '{{.FLAVOR_DIR | default "./custom-flavor"}}'
+    preconditions:
+      - test -d "{{.FLAVOR_DIR}}"
+    cmds:
+      - uv run python "{{.ROOT_DIR}}/scripts/validate_custom_flavor.py" "{{.FLAVOR_DIR}}"
+
+  unit:
+    desc: "Run unit tests for custom flavor generation"
+    summary: |
+      Runs the unit test suite for the custom flavor generation system.
+      Tests are output to .test-output/ directory.
+    vars:
+      TEST_DIR: '{{.ROOT_DIR}}/{{.TEST_DIR | default ".test-output"}}'
+    cmds:
+      - mkdir -p "{{.TEST_DIR}}"
+      - >-
+        uv run pytest
+        "{{.ROOT_DIR}}/tests/test_build_flavor_dockerfile.py"
+        "{{.ROOT_DIR}}/tests/test_validate_custom_flavor.py"
+        -v --tb=short --junitxml="{{.TEST_DIR}}/flavor-tests.xml"
+
+  build:
+    desc: "Build Docker image from generated custom flavor"
+    summary: |
+      Builds a Docker image from the generated custom flavor files.
+      Uses the cached MegaLinter source as the build context since the
+      upstream Dockerfile template references source files (pyproject.toml,
+      megalinter/, etc.) from the MegaLinter repo.
+
+      Runs generate -> validate -> docker build sequentially.
+
+      Variables:
+        FLAVOR_DIR: Directory containing flavor files (default: ./custom-flavor)
+        IMAGE_NAME: Docker image name (default: megalinter-local)
+        IMAGE_TAG: Docker image tag (default: v<MEGALINTER_VERSION>)
+    vars:
+      FLAVOR_DIR: '{{.FLAVOR_DIR | default "./custom-flavor"}}'
+      IMAGE_NAME: '{{.IMAGE_NAME | default "megalinter-local"}}'
+      IMAGE_TAG: '{{.IMAGE_TAG | default (printf "v%s" .MEGALINTER_VERSION)}}'
+    cmds:
+      - task: generate
+      - task: validate
+      - cp "{{.FLAVOR_DIR}}/mega-linter-flavor.yml" "{{.MEGALINTER_CACHE_DIR}}/mega-linter-flavor.yml"
+      - >-
+        {{.CONTAINER_ENGINE}} build
+        -t {{.IMAGE_NAME}}:{{.IMAGE_TAG}}
+        -f "{{.FLAVOR_DIR}}/Dockerfile"
+        --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        --build-arg BUILD_REVISION="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+        --build-arg BUILD_VERSION="{{.MEGALINTER_VERSION}}"
+        "{{.MEGALINTER_CACHE_DIR}}"
+
+  test:
+    desc: "Build and smoke-test the custom flavor Docker image"
+    summary: |
+      Builds the custom flavor image then runs smoke-test against it.
+      Convenience wrapper for local use; CI calls smoke-test directly
+      after its own build step.
+
+      Variables:
+        IMAGE_NAME: Docker image name (default: megalinter-local)
+        IMAGE_TAG: Docker image tag (default: v<MEGALINTER_VERSION>)
+    deps: [build]
+    vars:
+      IMAGE_NAME: '{{.IMAGE_NAME | default "megalinter-local"}}'
+      IMAGE_TAG: '{{.IMAGE_TAG | default (printf "v%s" .MEGALINTER_VERSION)}}'
+    cmds:
+      - task: smoke-test
+        vars:
+          IMAGE_NAME: "{{.IMAGE_NAME}}"
+          IMAGE_TAG: "{{.IMAGE_TAG}}"
+
+  smoke-test:
+    desc: "Smoke-test an already-built custom flavor Docker image"
+    summary: |
+      Runs three checks against a pre-built custom flavor image:
+        1. Flavor config file exists at /megalinter-flavor.yml
+        2. MegaLinter Python package imports successfully
+        3. MegaLinter startup + flavor check passes against an empty workspace
+           (catches MEGALINTER_FLAVOR registration errors like KeyError)
+
+      Variables:
+        IMAGE_NAME: Docker image name (default: megalinter-local)
+        IMAGE_TAG: Docker image tag (default: v<MEGALINTER_VERSION>)
+    vars:
+      IMAGE_NAME: '{{.IMAGE_NAME | default "megalinter-local"}}'
+      IMAGE_TAG: '{{.IMAGE_TAG | default (printf "v%s" .MEGALINTER_VERSION)}}'
+    cmds:
+      - '{{.CONTAINER_ENGINE}} run --rm --entrypoint "" {{.IMAGE_NAME}}:{{.IMAGE_TAG}} sh -c "test -f /megalinter-flavor.yml && python -c \"import megalinter; print(\\\"MegaLinter OK\\\")\""'
+      - |
+        # Run MegaLinter against an empty workspace to exercise the
+        # startup path including flavor_factory.check_active_linters_match_flavor.
+        # A Python traceback (e.g. KeyError on an unregistered flavor name)
+        # is always a bug; lint findings or "no files" exits are acceptable.
+        OUTPUT="$({{.CONTAINER_ENGINE}} run --rm \
+          -e DEFAULT_WORKSPACE=/tmp/lint \
+          -e MEGALINTER_CONFIG= \
+          -e VALIDATE_ALL_CODEBASE=true \
+          -v /dev/null:/tmp/lint/.mega-linter.yml:ro \
+          {{.IMAGE_NAME}}:{{.IMAGE_TAG}} 2>&1)" || true
+        if printf '%s\n' "$OUTPUT" | grep -q 'Traceback (most recent call last)'; then
+          printf '%s\n' "$OUTPUT" | tail -20
+          echo "FAIL: MegaLinter crashed with a Python traceback"
+          exit 1
+        fi
+      - echo "Custom flavor Docker image {{.IMAGE_NAME}}:{{.IMAGE_TAG}} is working correctly"
+
+  clean:
+    desc: "Clean up generated custom flavor files — DESTRUCTIVE"
+    summary: |
+      Removes generated custom flavor files and Docker images.
+
+      Variables:
+        FLAVOR_DIR: Directory containing flavor files (default: ./custom-flavor)
+        IMAGE_NAME: Docker image name to remove (default: megalinter-local)
+        REMOVE_IMAGE: Set to "true" to also remove Docker image
+    prompt: This will remove generated flavor files and optionally Docker images. Are you sure?
+    vars:
+      FLAVOR_DIR: '{{.FLAVOR_DIR | default "./custom-flavor"}}'
+      IMAGE_NAME: '{{.IMAGE_NAME | default "megalinter-local"}}'
+      REMOVE_IMAGE: '{{.REMOVE_IMAGE | default "false"}}'
+    cmds:
+      - |
+        if [ -d "{{.FLAVOR_DIR}}" ]; then
+          echo "Removing flavor directory: {{.FLAVOR_DIR}}"
+          rm -rf "{{.FLAVOR_DIR}}"
+        fi
+      - |
+        if [ "{{.REMOVE_IMAGE}}" = "true" ]; then
+          echo "Removing Docker image: {{.IMAGE_NAME}}"
+          {{.CONTAINER_ENGINE}} rmi "{{.IMAGE_NAME}}" 2>/dev/null || true
+        fi
+      - echo "Cleanup complete"

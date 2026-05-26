@@ -1,0 +1,11 @@
+# {{ description }}
+# Generated automatically from .mega-linter.yml configuration
+
+flavor: {{ flavor_name }}
+linters:
+{%- for linter in linters %}
+  - {{ linter }}
+{%- endfor %}
+
+# Inherit all settings from base configuration
+# Users can override by creating .mega-linter.local.yml with EXTENDS directive

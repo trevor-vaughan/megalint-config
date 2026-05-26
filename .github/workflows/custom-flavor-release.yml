@@ -1,0 +1,289 @@
+---
+name: Custom Flavor Release
+
+"on":
+  schedule:
+    - cron: "0 6 * * 0" # Weekly on Sunday 6 AM UTC
+  push:
+    branches: [main]
+    paths: [".mega-linter.yml"]
+  workflow_dispatch:
+    inputs:
+      base_image:
+        description: "Base MegaLinter image (e.g. ghcr.io/oxsecurity/megalinter:v9.5.0)"
+        required: false
+        default: ""
+        type: string
+
+# Keep in sync with .taskfiles/megalint.yml MEGALINTER_IMAGE
+env:
+  DEFAULT_BASE_IMAGE: ghcr.io/oxsecurity/megalinter:v9
+
+permissions:
+  contents: write # gh release create
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    name: Release Custom Flavor
+    runs-on: ubuntu-latest
+    environment: production # Use environment protection for additional security
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false # Don't cancel releases in progress
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Organization membership check
+        if: github.ref != 'refs/heads/main'
+        env:
+          GITHUB_ACTOR_NAME: ${{ github.actor }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Check if actor is organization member for unprotected refs.
+          # --fail returns non-zero on HTTP 4xx/5xx (404 = not a member).
+          if ! curl --fail --silent --show-error \
+               -H "Authorization: Bearer ${GH_TOKEN}" \
+               -H "Accept: application/vnd.github.v3+json" \
+               "https://api.github.com/orgs/${REPO_OWNER}/members/${GITHUB_ACTOR_NAME}"; then
+            echo "Access denied: ${GITHUB_ACTOR_NAME} is not a member of ${REPO_OWNER}"
+            exit 1
+          fi
+
+      - name: Determine version from upstream base image
+        id: version
+        env:
+          DISPATCH_IMAGE: ${{ inputs.base_image }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Resolve base image: workflow_dispatch input > workflow-level default.
+          BASE_IMAGE="${DISPATCH_IMAGE:-$DEFAULT_BASE_IMAGE}"
+          echo "Base image: ${BASE_IMAGE}"
+
+          # Extract registry/repo and tag from image reference.
+          # e.g. ghcr.io/oxsecurity/megalinter:v9 -> repo=oxsecurity/megalinter tag=v9
+          REPO="${BASE_IMAGE#ghcr.io/}"
+          REPO="${REPO%%:*}"
+          TAG="${BASE_IMAGE##*:}"
+
+          # If the tag is already a full semver (e.g. v9.5.0), use it directly.
+          # Otherwise resolve the floating tag (e.g. v9) to the highest
+          # concrete semver tag via the GHCR container API.
+          UPSTREAM_VERSION="${TAG#v}"
+          if [[ "$UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag is already a full semver: ${UPSTREAM_VERSION}"
+          else
+            echo "Resolving floating tag '${TAG}' to concrete version..."
+            MAJOR="${UPSTREAM_VERSION%%.*}"
+
+            # Query GHCR for all tags matching vMAJOR.*.* and pick the highest.
+            # The OCI distribution API requires a token even for public images.
+            GHCR_TOKEN="$(curl -fsSL \
+              "https://ghcr.io/token?scope=repository:${REPO}:pull" \
+              | jq -r '.token')"
+
+            UPSTREAM_VERSION="$(curl -fsSL \
+              -H "Authorization: Bearer ${GHCR_TOKEN}" \
+              "https://ghcr.io/v2/${REPO}/tags/list" \
+              | jq -r --arg m "v${MAJOR}" \
+                '[.tags[] | select(startswith($m)) | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))]
+                 | map(ltrimstr("v") | split(".") | map(tonumber))
+                 | sort_by(.[0], .[1], .[2])
+                 | last
+                 | map(tostring) | join(".")')"
+
+            if [[ -z "$UPSTREAM_VERSION" || "$UPSTREAM_VERSION" == "null" ]]; then
+              echo "Error: could not resolve concrete version for tag '${TAG}' from ghcr.io/${REPO}"
+              exit 1
+            fi
+            echo "Resolved to: ${UPSTREAM_VERSION}"
+          fi
+
+          # Validate semver format.
+          IFS='.' read -r major minor patch <<< "$UPSTREAM_VERSION"
+          if ! [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ && "$patch" =~ ^[0-9]+$ ]]; then
+            echo "Error: invalid semver '${UPSTREAM_VERSION}' (got ${major}.${minor}.${patch})"
+            exit 1
+          fi
+
+          VERSION="${major}.${minor}.${patch}"
+          echo "Upstream base version: ${VERSION}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "base_image=${BASE_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "BASE_IMAGE=${BASE_IMAGE}" >> "$GITHUB_ENV"
+          echo "FLAVOR_VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false # Prevent cache-poisoning in release workflow
+
+      - name: Install Task
+        uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Sync dependencies
+        run: task dev:sync
+
+      - name: Clone MegaLinter source
+        run: task flavor:clone MEGALINTER_VERSION="${FLAVOR_VERSION}"
+
+      - name: Generate custom flavor
+        run: >-
+          task flavor:generate
+          OUTPUT_DIR=./generated-flavor
+          FLAVOR_NAME=custom-flavor
+          MEGALINTER_VERSION="${FLAVOR_VERSION}"
+
+      - name: Validate flavor
+        run: task flavor:validate FLAVOR_DIR=./generated-flavor
+
+      - name: Prepare Docker build context
+        id: context
+        run: |
+          set -euo pipefail
+          # The upstream Dockerfile references files from the MegaLinter repo
+          # (pyproject.toml, megalinter/, etc.), so the build context must be
+          # the cached MegaLinter source — same approach as `task flavor:build`.
+          CACHE_DIR=".cache/megalinter-v${FLAVOR_VERSION}"
+          if [ ! -d "${CACHE_DIR}" ]; then
+            echo "Error: MegaLinter cache directory not found at ${CACHE_DIR}"
+            exit 1
+          fi
+          cp ./generated-flavor/mega-linter-flavor.yml "${CACHE_DIR}/mega-linter-flavor.yml"
+          echo "context=${CACHE_DIR}" >> "$GITHUB_OUTPUT"
+          echo "dockerfile=./generated-flavor/Dockerfile" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Login to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build image for testing
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
+        with:
+          context: ${{ steps.context.outputs.context }}
+          file: ${{ steps.context.outputs.dockerfile }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: megalinter-custom-flavor:test
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
+            BUILD_REVISION=${{ github.sha }}
+            BUILD_VERSION=${{ steps.version.outputs.version }}
+
+      - name: Smoke-test image
+        env:
+          # docker/build-push-action loads the image into Docker's store,
+          # so force the smoke-test to use docker too — ubuntu-latest ships
+          # podman which Task would auto-select.
+          CONTAINER_ENGINE: docker
+        run: task flavor:smoke-test IMAGE_NAME=megalinter-custom-flavor IMAGE_TAG=test
+
+      - name: Push multi-platform image
+        id: build
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
+        with:
+          context: ${{ steps.context.outputs.context }}
+          file: ${{ steps.context.outputs.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          cache-from: type=gha
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
+            BUILD_REVISION=${{ github.sha }}
+            BUILD_VERSION=${{ steps.version.outputs.version }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor:latest
+            ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.title=MegaLinter Custom Flavor
+            org.opencontainers.image.description=Custom MegaLinter flavor generated from configuration
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: Generate SLSA provenance
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Generate SBOM
+        if: github.event_name != 'pull_request'
+        uses: anchore/sbom-action@e11c554f704a0b820cbf8c51673f6945e0731532 # v0.20.0
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor:${{ steps.version.outputs.version }}
+          output-file: custom-flavor-sbom.spdx.json
+          format: spdx-json
+
+      - name: Attest SBOM
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1.4.1
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: custom-flavor-sbom.spdx.json
+          push-to-registry: true
+
+      - name: Create GitHub release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v${{ steps.version.outputs.version }}-${{ github.run_number }}
+          RELEASE_TITLE: Custom Flavor v${{ steps.version.outputs.version }} (build ${{ github.run_number }})
+          VERSION: ${{ steps.version.outputs.version }}
+          BASE_IMAGE_REF: ${{ steps.version.outputs.base_image }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          cat <<EOF | gh release create "${RELEASE_TAG}" \
+            --title "${RELEASE_TITLE}" \
+            --notes-file -
+          ## MegaLinter Custom Flavor v${VERSION}
+
+          Custom MegaLinter flavor generated from configuration.
+          Base image: \`${BASE_IMAGE_REF}\`
+
+          ### Image Tags
+          - \`ghcr.io/${REPO_OWNER}/megalinter-custom-flavor:latest\`
+          - \`ghcr.io/${REPO_OWNER}/megalinter-custom-flavor:${VERSION}\`
+          - \`ghcr.io/${REPO_OWNER}/megalinter-custom-flavor:sha-${COMMIT_SHA}\`
+
+          ### Details
+          - Supply chain attestation (SLSA provenance + SBOM) included
+          - Multi-platform support: linux/amd64, linux/arm64
+
+          ### Usage
+          \`\`\`yaml
+          container: ghcr.io/${REPO_OWNER}/megalinter-custom-flavor:${VERSION}
+          \`\`\`
+
+          **Commit:** ${COMMIT_SHA}
+          EOF

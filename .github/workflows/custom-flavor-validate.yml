@@ -1,0 +1,181 @@
+---
+name: Custom Flavor Validation
+
+# yamllint disable-line rule:truthy
+on:
+  pull_request:
+    paths:
+      - ".mega-linter.yml"
+      - "scripts/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  push:
+    branches-ignore:
+      - "main"
+    paths:
+      - ".mega-linter.yml"
+      - "scripts/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-flavor:
+    name: Validate Custom Flavor
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install Task
+        uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Sync dependencies
+        run: task dev:sync
+
+      - name: Clone MegaLinter source
+        run: task flavor:clone
+
+      - name: Generate custom flavor
+        run: task flavor:generate OUTPUT_DIR=./generated-flavor FLAVOR_NAME=test-flavor
+
+      - name: Validate generated flavor
+        run: task flavor:validate FLAVOR_DIR=./generated-flavor
+
+      - name: Run tests
+        run: task test
+
+      - name: Verify flavor structure
+        run: |
+          echo "=== Generated Flavor Structure ==="
+          find ./generated-flavor -type f -name "*.py" -o -name "*.yml" -o -name "Dockerfile" | head -20
+          echo
+          echo "=== Dockerfile exists ==="
+          test -f ./generated-flavor/Dockerfile && echo "✓ Dockerfile found" || echo "✗ Dockerfile missing"
+          echo
+          echo "=== mega-linter-flavor.yml exists ==="
+          test -f ./generated-flavor/mega-linter-flavor.yml && echo "✓ mega-linter-flavor.yml found" || echo "✗ mega-linter-flavor.yml missing"
+
+      - name: Archive generated flavor
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: custom-flavor-validation-${{ github.sha }}-${{ github.run_attempt }}
+          path: ./generated-flavor/
+          retention-days: 7
+          if-no-files-found: error
+
+  test-docker-build:
+    name: Test Docker Build
+    runs-on: ubuntu-latest
+    needs: validate-flavor
+    if: success()
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install Task
+        uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Clone MegaLinter source
+        run: task flavor:clone
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Download flavor artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: custom-flavor-validation-${{ github.sha }}-${{ github.run_attempt }}
+          path: ./generated-flavor
+
+      - name: Validate artifact contents
+        run: |
+          echo "=== Validating artifact contents ==="
+          if [[ $(find ./generated-flavor -name "*/.." -o -name "../*" | wc -l) -gt 0 ]]; then
+            echo "Error: Suspicious paths found in artifact"
+            exit 1
+          fi
+          echo "Artifact contents validated"
+          ls -la ./generated-flavor/
+
+      - name: Verify Dockerfile exists
+        run: |
+          if [ ! -f ./generated-flavor/Dockerfile ]; then
+            echo "Error: Dockerfile not found in artifact"
+            exit 1
+          fi
+          echo "Dockerfile found, proceeding with build test"
+
+      - name: Prepare Docker build context
+        id: context
+        run: |
+          set -euo pipefail
+          # The upstream Dockerfile references files from the MegaLinter repo
+          # (pyproject.toml, megalinter/, etc.), so the build context must be
+          # the cached MegaLinter source — same approach as `task flavor:build`.
+          # Discover the cache dir rather than hardcoding the version.
+          CACHE_DIR="$(find .cache -maxdepth 1 -name 'megalinter-v*' -type d | head -1)"
+          if [ -z "${CACHE_DIR}" ]; then
+            echo "Error: MegaLinter cache directory not found"
+            exit 1
+          fi
+          cp ./generated-flavor/mega-linter-flavor.yml "${CACHE_DIR}/mega-linter-flavor.yml"
+          echo "context=${CACHE_DIR}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        env:
+          IMAGE_TAG: test-custom-flavor:${{ github.sha }}-${{ github.run_attempt }}
+          BUILD_REVISION: ${{ github.sha }}
+          BUILD_CONTEXT: ${{ steps.context.outputs.context }}
+        run: |
+          docker build \
+            -t "${IMAGE_TAG}" \
+            -f ./generated-flavor/Dockerfile \
+            --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --build-arg BUILD_REVISION="${BUILD_REVISION}" \
+            --build-arg BUILD_VERSION="test" \
+            "${BUILD_CONTEXT}"
+        timeout-minutes: 30
+
+      - name: Smoke-test image
+        env:
+          IMAGE_TAG: test-custom-flavor:${{ github.sha }}-${{ github.run_attempt }}
+          # The build step uses `docker build` directly, so the image
+          # lives in Docker's store.  Force the smoke-test to use docker
+          # too — ubuntu-latest ships podman which Task would auto-select.
+          CONTAINER_ENGINE: docker
+        run: task flavor:smoke-test IMAGE_NAME="${IMAGE_TAG%%:*}" IMAGE_TAG="${IMAGE_TAG##*:}"
+
+      - name: Clean up Docker image
+        if: always()
+        env:
+          IMAGE_TAG: test-custom-flavor:${{ github.sha }}-${{ github.run_attempt }}
+        run: |
+          docker rmi "${IMAGE_TAG}" || true
