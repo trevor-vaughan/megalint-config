@@ -75,6 +75,7 @@ ENABLE_LINTERS:
   # ---------------------------------------------------------------------------
   # Infrastructure-as-Code (valuable for org-wide reuse)
   # ---------------------------------------------------------------------------
+  - ACTION_ZIZMOR # GitHub Actions security scanner
   - ACTION_ACTIONLINT # GitHub Actions workflow validation
   - DOCKERFILE_HADOLINT # Dockerfile best practices
   - KUBERNETES_KUBECONFORM # Kubernetes manifest validation
