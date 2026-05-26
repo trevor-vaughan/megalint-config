@@ -254,6 +254,12 @@ if [[ "${apply_fixes}" == "none" ]]; then
 	# to `/tmp/lint/github_conf` and persist_all_confs() crashes with
 	# EROFS. POSIX os.path.join(a, b) returns b when b is absolute, so
 	# we abuse the NAME slot to inject an absolute path on the tmpfs.
+	# In in-target mode, .git is inside the ro workspace mount. MegaLinter's
+	# changed-files mode needs to write .git/FETCH_HEAD during git fetch, so
+	# overlay a nested rw mount (same pattern as megalinter-reports above).
+	if [[ "${VALIDATE_ALL_CODEBASE:-}" == "false" && -d "${workspace}/.git" ]] && ! "${use_tempdir}"; then
+		mounts+=(-v "${workspace}/.git:/tmp/lint/.git:rw,z")
+	fi
 	env_args+=(
 		-e "TMPDIR=/tmp"
 		-e "RUFF_CACHE_DIR=/tmp/ruff-cache"
