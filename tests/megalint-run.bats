@@ -172,3 +172,105 @@ teardown() {
   grep -qE '^--pull=always$' "${ENGINE_ARGS_FILE}"
   ! grep -qE '^MEGALINTER_CONFIG=' "${ENGINE_ARGS_FILE}"
 }
+
+@test "runner prints diagnostic when VALIDATE_ALL_CODEBASE=false requires git write access" {
+  # Create a .git directory to trigger git mount behavior
+  mkdir -p "${TARGET}/.git"
+  
+  # Create a stub rsync that just succeeds (for tempdir staging)
+  cat > "${STUB_DIR}/rsync" <<'EOF'
+#!/usr/bin/env bash
+# Stub rsync that does nothing but succeed
+exit 0
+EOF
+  chmod +x "${STUB_DIR}/rsync"
+  PATH="${STUB_DIR}:${PATH}"
+  
+  # Enable tempdir staging and set VALIDATE_ALL_CODEBASE=false
+  MEGALINT_TMPDIR=1 VALIDATE_ALL_CODEBASE=false \
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" \
+    "${TARGET}" \
+    "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" \
+    "none"
+
+  [ "$status" -eq 0 ]
+  # Should print diagnostic message about git mount
+  [[ "$output" =~ "Mounting .git read-write for git diff operations" ]]
+  # Should mount .git read-write (rw) not read-only (ro)
+  grep -qE '\.git:/tmp/lint/\.git:rw,z$' "${ENGINE_ARGS_FILE}"
+  ! grep -qE '\.git:/tmp/lint/\.git:ro,z$' "${ENGINE_ARGS_FILE}"
+}
+
+@test "runner mounts .git read-only when VALIDATE_ALL_CODEBASE is not false" {
+  # Create a .git directory to trigger git mount behavior  
+  mkdir -p "${TARGET}/.git"
+  
+  # Create a stub rsync that just succeeds (for tempdir staging)
+  cat > "${STUB_DIR}/rsync" <<'EOF'
+#!/usr/bin/env bash
+# Stub rsync that does nothing but succeed
+exit 0
+EOF
+  chmod +x "${STUB_DIR}/rsync"
+  PATH="${STUB_DIR}:${PATH}"
+  
+  # Enable tempdir staging but leave VALIDATE_ALL_CODEBASE at default (true)
+  MEGALINT_TMPDIR=1 \
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" \
+    "${TARGET}" \
+    "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" \
+    "none"
+
+  [ "$status" -eq 0 ]
+  # Should NOT print the diagnostic message
+  ! [[ "$output" =~ "Mounting .git read-write for git diff operations" ]]
+  # Should mount .git read-only (ro) not read-write (rw)
+  grep -qE '\.git:/tmp/lint/\.git:ro,z$' "${ENGINE_ARGS_FILE}"
+  ! grep -qE '\.git:/tmp/lint/\.git:rw,z$' "${ENGINE_ARGS_FILE}"
+}
+
+@test "runner skips git mount when no .git directory exists" {
+  # Create a stub rsync that just succeeds (for tempdir staging)
+  cat > "${STUB_DIR}/rsync" <<'EOF'
+#!/usr/bin/env bash
+# Stub rsync that does nothing but succeed
+exit 0
+EOF
+  chmod +x "${STUB_DIR}/rsync"
+  PATH="${STUB_DIR}:${PATH}"
+  
+  # Do NOT create .git directory
+  MEGALINT_TMPDIR=1 VALIDATE_ALL_CODEBASE=false \
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" \
+    "${TARGET}" \
+    "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" \
+    "none"
+
+  [ "$status" -eq 0 ]
+  # Should not mount .git at all
+  ! grep -qE '\.git:/tmp/lint/\.git:' "${ENGINE_ARGS_FILE}"
+}
+
+@test "runner works in in-target staging mode with VALIDATE_ALL_CODEBASE=false" {
+  # Create a .git directory to trigger git mount behavior
+  mkdir -p "${TARGET}/.git"
+  
+  # Use in-target staging (no MEGALINT_TMPDIR)
+  VALIDATE_ALL_CODEBASE=false \
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" \
+    "${TARGET}" \
+    "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" \
+    "none"
+
+  [ "$status" -eq 0 ]
+  # In-target mode doesn't mount .git separately (it's part of the workspace mount)
+  ! grep -qE '\.git:/tmp/lint/\.git:' "${ENGINE_ARGS_FILE}"
+}

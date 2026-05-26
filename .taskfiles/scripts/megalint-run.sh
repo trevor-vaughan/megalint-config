@@ -265,9 +265,15 @@ else
 fi
 
 # In tempdir mode, .git was excluded from the rsync clone — bind-mount
-# the target's real .git in as read-only so linters can still use it.
+# the target's real .git. If VALIDATE_ALL_CODEBASE=false, MegaLinter needs
+# to write to .git/FETCH_HEAD during git diff operations, so mount read-write.
 if "${git_is_dir}"; then
-	mounts+=(-v "${target}/.git:/tmp/lint/.git:ro,z")
+	if [[ "${VALIDATE_ALL_CODEBASE:-}" == "false" ]]; then
+		echo "Mounting .git read-write for git diff operations (VALIDATE_ALL_CODEBASE=false)"
+		mounts+=(-v "${target}/.git:/tmp/lint/.git:rw,z")
+	else
+		mounts+=(-v "${target}/.git:/tmp/lint/.git:ro,z")
+	fi
 fi
 
 "${engine}" run --rm \
