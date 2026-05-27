@@ -1,0 +1,14 @@
+# Checkov configuration file (shared template)
+# Automatically passed to Checkov via --config-file by MegaLinter.
+# Docs: https://www.checkov.io/2.Basics/CLI%20Command%20Reference.html
+#
+# Target repos can override this by placing their own .checkov.yml at
+# the repo root. The runner skips overlay when the target already has
+# a file with the same name.
+#
+# To generate a config from CLI flags:
+#   checkov --create-config .checkov.yml [flags...]
+
+# Paths to skip (regex, relative to working directory).
+skip-path:
+  - "_some/_path/_to/_exclude/_replace/_me"

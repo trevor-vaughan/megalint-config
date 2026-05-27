@@ -147,11 +147,20 @@ REPOSITORY_KICS_ARGUMENTS:
   - "--no-color"
   - "--fail-on=high,medium"
 
-# Checkov: No special arguments needed. The `github_configuration` framework
-# works on the read-only workspace mount because megalint-run.sh sets
-# CKV_GITHUB_CONF_DIR_NAME (NOT _PATH — Checkov ignores _PATH and recomputes
-# it from cwd + _NAME, so we feed _NAME an absolute path on the tmpfs). See
-# megalint-run.sh for the full explanation.
+# Checkov: The `github_configuration` framework works on the read-only
+# workspace mount because megalint-run.sh sets CKV_GITHUB_CONF_DIR_NAME
+# (NOT _PATH — Checkov ignores _PATH and recomputes it from cwd + _NAME,
+# so we feed _NAME an absolute path on the tmpfs). See megalint-run.sh
+# for the full explanation.
+#
+# Path and rule exclusions live in .checkov.yml (project root). A shared
+# template is in .mega-linter.d/.checkov.yml; targets override it by
+# placing their own .checkov.yml at the repo root.
+#
+# NOTE: FILTER_REGEX_EXCLUDE does NOT work for REPOSITORY-scoped linters
+# because Checkov runs in `project` CLI lint mode and scans the directory
+# tree itself, bypassing MegaLinter file filtering.
+REPOSITORY_CHECKOV_CONFIG_FILE: .checkov.yml
 
 # DevSkim: Rule and path exclusions are in .devskim.json. In this repo it
 # lives in .mega-linter.d/ and is overlaid at the workspace root by the runner.
@@ -162,6 +171,10 @@ REPOSITORY_DEVSKIM_CONFIG_FILE: .devskim.json
 REPOSITORY_SECRETLINT_ARGUMENTS:
   - "--secretlintignore"
   - ".secretlintignore"
+
+# Enable GITHUB_TOKEN for zizmor security scanner
+ACTION_ZIZMOR_UNSECURED_ENV_VARIABLES:
+  - GITHUB_TOKEN
 
 # =============================================================================
 # Development/Debugging (uncomment as needed)
