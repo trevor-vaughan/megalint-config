@@ -33,6 +33,11 @@ jobs:
     concurrency:
       group: release-${{ github.ref }}
       cancel-in-progress: false # Don't cancel releases in progress
+    env:
+      # Build steps use docker/build-push-action (Docker), so Taskfile
+      # tasks in this job must also use docker.  ubuntu-latest ships
+      # podman, which Task would otherwise auto-select.
+      CONTAINER_ENGINE: docker
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -191,11 +196,6 @@ jobs:
             BUILD_VERSION=${{ steps.version.outputs.version }}
 
       - name: Smoke-test image
-        env:
-          # docker/build-push-action loads the image into Docker's store,
-          # so force the smoke-test to use docker too — ubuntu-latest ships
-          # podman which Task would auto-select.
-          CONTAINER_ENGINE: docker
         run: task flavor:smoke-test IMAGE_NAME=megalinter-custom-flavor IMAGE_TAG=test
 
       - name: Push multi-platform image

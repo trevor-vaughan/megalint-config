@@ -92,6 +92,11 @@ jobs:
     if: success()
     permissions:
       contents: read
+    env:
+      # This job builds with `docker build` directly, so every step
+      # (including Taskfile tasks) must use the same engine.
+      # ubuntu-latest ships podman, which Task would otherwise auto-select.
+      CONTAINER_ENGINE: docker
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -167,10 +172,6 @@ jobs:
       - name: Smoke-test image
         env:
           IMAGE_TAG: test-custom-flavor:${{ github.sha }}-${{ github.run_attempt }}
-          # The build step uses `docker build` directly, so the image
-          # lives in Docker's store.  Force the smoke-test to use docker
-          # too — ubuntu-latest ships podman which Task would auto-select.
-          CONTAINER_ENGINE: docker
         run: task flavor:smoke-test IMAGE_NAME="${IMAGE_TAG%%:*}" IMAGE_TAG="${IMAGE_TAG##*:}"
 
       - name: Clean up Docker image
