@@ -120,15 +120,18 @@ ENABLE_LINTERS:
 
 When the linter reports many findings:
 
-1. Run `task megalint:sarif-chunk`. This splits the SARIF into one markdown
-   file per linter under `megalinter-reports/megalinter-report-chunked/`.
+1. A human runs `task megalint:sarif-chunk` — invoking any `task megalint:*`
+   target is a human action, not an agent one. This splits the SARIF into one
+   markdown file per linter under `megalinter-reports/llm-sarif/`.
 2. The chunked output includes an `AGENTS.md` briefing tailored for
-   sub-agent dispatch — see `.taskfiles/scripts/templates/megalinter-agents.md`
-   for the template used to generate it.
-3. Spawn one sub-agent per linter file. Mechanical fixes (formatting,
-   whitespace) suit smaller/faster models; security or architectural
-   findings warrant a larger model.
-4. Re-run `task megalint:run` after fixes; iterate until clean.
+   tool-agnostic worker dispatch — see
+   `.taskfiles/scripts/templates/megalinter-agents.md` for the template used to
+   generate it.
+3. Dispatch one worker per linter file — a sub-agent, parallel job, or a
+   sequential pass, whatever your harness supports. Mechanical fixes
+   (formatting, whitespace) suit smaller/faster models; security or
+   architectural findings warrant a larger model.
+4. A human re-runs `task megalint:run` after fixes and iterates until clean.
 
 ## Editing the configuration
 

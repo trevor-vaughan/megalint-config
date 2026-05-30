@@ -224,8 +224,9 @@ task megalint:sarif-chunk
 task megalint:sarif-chunk TARGET=/path/to/other/repo
 ```
 
-The chunked output lands in `megalinter-reports/megalinter-report-chunked/`.
-Each file is self-contained and can be handed to a sub-agent for parallel
+The chunked output lands in `megalinter-reports/llm-sarif/`.
+Each file is self-contained and can be handed to a worker (sub-agent,
+parallel job, or sequential pass — whatever your agent harness supports) for
 fix-up — see `.taskfiles/scripts/templates/megalinter-agents.md` for the
 recommended workflow.
 
