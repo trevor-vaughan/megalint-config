@@ -73,17 +73,18 @@ runs:
       shell: bash
       working-directory: ${{ github.action_path }}
       env:
-        VALIDATE_ALL_CODEBASE: ${{ inputs.validate-all-codebase }}
         GITHUB_TOKEN: ${{ github.token }}
         INPUT_WORKING_DIR: ${{ inputs.working-directory }}
         INPUT_MEGALINTER_IMAGE: ${{ inputs.megalinter-image }}
         INPUT_PULL_POLICY: ${{ inputs.pull-policy }}
+        INPUT_VALIDATE_ALL: ${{ inputs.validate-all-codebase }}
       run: |
         set -euo pipefail
         task -y megalint:run \
           TARGET="${INPUT_WORKING_DIR}" \
           MEGALINTER_IMAGE="${INPUT_MEGALINTER_IMAGE}" \
-          PULL_POLICY="${INPUT_PULL_POLICY}"
+          PULL_POLICY="${INPUT_PULL_POLICY}" \
+          VALIDATE_ALL_CODEBASE="${INPUT_VALIDATE_ALL}"
 
     - name: Relocate reports if requested
       if: ${{ always() }}

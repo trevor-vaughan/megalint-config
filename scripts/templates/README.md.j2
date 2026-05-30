@@ -1,0 +1,54 @@
+# MegaLinter Custom Flavor: {{ flavor_name }}
+
+{{ description }}
+
+This custom flavor includes the following linters:
+
+{%- for linter in linters %}
+- **{{ linter }}**
+{%- endfor %}
+
+## Usage
+
+### GitHub Actions
+
+```yaml
+name: MegaLinter
+on: [push, pull_request]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ "{{ secrets.GITHUB_TOKEN }}" }}
+          fetch-depth: 0
+
+      - name: MegaLinter
+        uses: docker://{{ registry }}/{{ repository }}/megalinter-custom-flavor:latest
+        env:
+          GITHUB_TOKEN: ${{ "{{ secrets.GITHUB_TOKEN }}" }}
+```
+
+### Docker
+
+```bash
+docker run --rm \
+  -v ${PWD}:/tmp/lint \
+  {{ registry }}/{{ repository }}/megalinter-custom-flavor:latest
+```
+
+## Included Linters
+
+This flavor includes {{ linters | length }} linters:
+
+{%- for linter in linters %}
+- `{{ linter }}`
+{%- endfor %}
+
+## Source
+
+Generated from: {{ repository }}
+Version: {{ version }}

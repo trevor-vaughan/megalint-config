@@ -106,6 +106,24 @@ credentials.json
 
 
 # -----------------------------------------------------------------------------
+# Build caches (cloned upstream sources, never committed)
+# -----------------------------------------------------------------------------
+.cache/
+.task/
+
+
+# -----------------------------------------------------------------------------
+# Generated custom flavor artifacts
+# -----------------------------------------------------------------------------
+# Output of scripts/generate_custom_flavor.py; rebuilt by CI on every release.
+custom-flavor/
+
+# -----------------------------------------------------------------------------
+# LLM planning documents (local-only, never committed)
+# -----------------------------------------------------------------------------
+docs/superpowers/
+
+# -----------------------------------------------------------------------------
 # Implementation-time notes (local-only, never committed)
 # -----------------------------------------------------------------------------
 # Version verification notes written during plan execution; safe to delete

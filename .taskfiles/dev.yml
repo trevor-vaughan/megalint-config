@@ -1,0 +1,35 @@
+version: "3"
+
+vars:
+  TEST_OUTPUT: "{{.ROOT_DIR}}/.test-output"
+
+tasks:
+  default:
+    silent: true
+    cmd: task dev --list
+
+  sync:
+    desc: "Install Python dependencies into .venv via uv"
+    sources:
+      - "{{.ROOT_DIR}}/pyproject.toml"
+      - "{{.ROOT_DIR}}/uv.lock"
+    generates:
+      - "{{.ROOT_DIR}}/.venv/**/*"
+    cmd: uv sync
+    dir: "{{.ROOT_DIR}}"
+
+  test:
+    desc: "Run Python test suite (output to .test-output/)"
+    deps: [sync]
+    cmds:
+      - mkdir -p "{{.TEST_OUTPUT}}"
+      - >-
+        uv run pytest
+        -v --tb=short --junitxml="{{.TEST_OUTPUT}}/flavor-tests.xml"
+        {{.CLI_ARGS}}
+    dir: "{{.ROOT_DIR}}"
+
+  test:runner:
+    desc: "Run bats tests for .taskfiles/scripts/*.sh"
+    cmds:
+      - bats {{.ROOT_DIR}}/tests/*.bats

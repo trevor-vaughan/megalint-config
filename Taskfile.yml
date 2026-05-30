@@ -1,16 +1,29 @@
 # https://taskfile.dev
 version: "3"
 
+includes:
+  dev:
+    taskfile: .taskfiles/dev.yml
+  flavor:
+    taskfile: .taskfiles/flavor.yml
+  megalint:
+    taskfile: .taskfiles/megalint.yml
+
 vars:
   CONTAINER_ENGINE:
-    sh: 'command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"'
-
-includes:
-  megalint: ./.taskfiles/megalint.yml
-  test: ./.taskfiles/test.yml
+    sh: 'echo "${CONTAINER_ENGINE:-$(command -v podman >/dev/null 2>&1 && echo podman || echo docker)}"'
 
 tasks:
   default:
-    cmds:
-      - task --list
     silent: true
+    cmd: |
+      task --list 2>/dev/null
+
+  test:
+    desc: "Alias for dev:test"
+    cmds:
+      - task: dev:test
+
+  check:
+    desc: Run all quality gates
+    deps: [test]

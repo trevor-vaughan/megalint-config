@@ -1,0 +1,26 @@
+name: 'MegaLinter ({{ flavor_name }})'
+description: '{{ description }}'
+author: 'Generated from megalinter-config repository'
+
+inputs:
+  github_token:
+    description: 'GitHub token for API calls'
+    required: false
+    default: ${{ "{{ github.token }}" }}
+  
+  apply_fixes:
+    description: 'Apply fixes to source code'
+    required: false
+    default: 'none'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  env:
+    GITHUB_TOKEN: ${{ "{{ inputs.github_token }}" }}
+    APPLY_FIXES: ${{ "{{ inputs.apply_fixes }}" }}
+    DEFAULT_WORKSPACE: /tmp/lint
+
+branding:
+  icon: 'check'
+  color: 'green'
