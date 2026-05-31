@@ -23,37 +23,37 @@ UPSTREAM_VERSION="${UPSTREAM_VERSION:-}"
 
 # Upstream version must be strict MAJOR.MINOR.PATCH.
 if [[ ! "${UPSTREAM_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "Error: UPSTREAM_VERSION must be strict semver X.Y.Z (got '${UPSTREAM_VERSION}')" >&2
-  exit 1
+	echo "Error: UPSTREAM_VERSION must be strict semver X.Y.Z (got '${UPSTREAM_VERSION}')" >&2
+	exit 1
 fi
 
 # Refresh lane: no tag. Move :latest, cut no release, no composite.
 if [[ -z "${REF_NAME}" ]]; then
-  printf 'release_version=\n'
-  printf 'is_prerelease=false\n'
-  printf 'composite=\n'
-  printf 'move_latest=true\n'
-  printf 'create_release=false\n'
-  exit 0
+	printf 'release_version=\n'
+	printf 'is_prerelease=false\n'
+	printf 'composite=\n'
+	printf 'move_latest=true\n'
+	printf 'create_release=false\n'
+	exit 0
 fi
 
 # Release lane: tag must be v<semver> with optional -<prerelease>.
 if [[ ! "${REF_NAME}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-([0-9A-Za-z.-]+))?$ ]]; then
-  echo "Error: tag '${REF_NAME}' is not a valid release tag (expected vX.Y.Z or vX.Y.Z-PRERELEASE)" >&2
-  exit 1
+	echo "Error: tag '${REF_NAME}' is not a valid release tag (expected vX.Y.Z or vX.Y.Z-PRERELEASE)" >&2
+	exit 1
 fi
 
 core="${BASH_REMATCH[1]}"
 prerelease="${BASH_REMATCH[3]:-}"
 
 if [[ -n "${prerelease}" ]]; then
-  release_version="${core}-${prerelease}"
-  is_prerelease="true"
-  move_latest="false"
+	release_version="${core}-${prerelease}"
+	is_prerelease="true"
+	move_latest="false"
 else
-  release_version="${core}"
-  is_prerelease="false"
-  move_latest="true"
+	release_version="${core}"
+	is_prerelease="false"
+	move_latest="true"
 fi
 
 printf 'release_version=%s\n' "${release_version}"

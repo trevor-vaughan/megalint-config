@@ -37,12 +37,12 @@ This repo also publishes a **custom MegaLinter flavor image** to
 
 ### Image tags — read this before you pin
 
-| Tag                    | Meaning                                                                                                                                                                  | Use it when                                                          |
-|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
-| `:latest`              | **Always the freshest build.** Moved by every release *and* by the weekly refresh that rebuilds on the newest upstream MegaLinter. **Not stable** — it changes under you. | You want the newest linters and CVE data and do not need reproducibility. |
-| `:X.Y.Z-mlA.B.C`       | **Immutable release.** `X.Y.Z` is this repo's release; `mlA.B.C` is the exact upstream MegaLinter it wraps. Never moves.                                                  | You need a reproducible, auditable scan. **Pin this** (or a digest). |
-| `:X.Y.Z-rcN-mlA.B.C`   | Pre-release. Immutable and pullable for testing. **Never** becomes `:latest`.                                                                                            | You are validating a release candidate.                             |
-| `:sha-<commit>`        | The exact build for a commit. Immutable.                                                                                                                                 | You need to trace an image to its source commit.                    |
+| Tag                  | Meaning                                                                                                                                                                   | Use it when                                                               |
+|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+| `:latest`            | **Always the freshest build.** Moved by every release *and* by the weekly refresh that rebuilds on the newest upstream MegaLinter. **Not stable** — it changes under you. | You want the newest linters and CVE data and do not need reproducibility. |
+| `:X.Y.Z-mlA.B.C`     | **Immutable release.** `X.Y.Z` is this repo's release; `mlA.B.C` is the exact upstream MegaLinter it wraps. Never moves.                                                  | You need a reproducible, auditable scan. **Pin this** (or a digest).      |
+| `:X.Y.Z-rcN-mlA.B.C` | Pre-release. Immutable and pullable for testing. **Never** becomes `:latest`.                                                                                             | You are validating a release candidate.                                   |
+| `:sha-<commit>`      | The exact build for a commit. Immutable.                                                                                                                                  | You need to trace an image to its source commit.                          |
 
 > **Reproducibility:** `:latest` is intentionally a moving target so security
 > scans get the newest rules by default. For repeatable results, pin a digest
