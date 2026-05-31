@@ -30,6 +30,37 @@ projects can share one linting policy.
 | `.taskfiles/scripts/megalinter-sarif-chunk.sh` | Splits SARIF into per-linter markdown for LLM-driven remediation.                                                                                                   |
 | `.github/workflows/megalinter.yml`             | CI workflow that runs MegaLinter on every push and PR.                                                                                                              |
 
+## Custom flavor image
+
+This repo also publishes a **custom MegaLinter flavor image** to
+`ghcr.io/trevor-vaughan/megalinter-custom-flavor`, built from `.mega-linter.yml`.
+
+### Image tags — read this before you pin
+
+| Tag                    | Meaning                                                                                                                                                                  | Use it when                                                          |
+|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
+| `:latest`              | **Always the freshest build.** Moved by every release *and* by the weekly refresh that rebuilds on the newest upstream MegaLinter. **Not stable** — it changes under you. | You want the newest linters and CVE data and do not need reproducibility. |
+| `:X.Y.Z-mlA.B.C`       | **Immutable release.** `X.Y.Z` is this repo's release; `mlA.B.C` is the exact upstream MegaLinter it wraps. Never moves.                                                  | You need a reproducible, auditable scan. **Pin this** (or a digest). |
+| `:X.Y.Z-rcN-mlA.B.C`   | Pre-release. Immutable and pullable for testing. **Never** becomes `:latest`.                                                                                            | You are validating a release candidate.                             |
+| `:sha-<commit>`        | The exact build for a commit. Immutable.                                                                                                                                 | You need to trace an image to its source commit.                    |
+
+> **Reproducibility:** `:latest` is intentionally a moving target so security
+> scans get the newest rules by default. For repeatable results, pin a digest
+> (`...@sha256:…`) or an immutable composite tag — never `:latest`.
+
+### Cutting a release
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The tag push builds the multi-platform image, publishes `:0.1.0-ml<upstream>`
+and `:sha-<commit>`, moves `:latest` (non-pre-releases only), attaches SLSA
+provenance + SBOM attestations, and creates a GitHub release. Pre-release tags
+(`v0.1.0-rc1`) publish a composite image but do not move `:latest`. The weekly
+cron rebuilds `:latest` only, to absorb upstream patches between releases.
+
 ## Running MegaLinter
 
 This repo is a *linter runner*: clone it once, then point it at any

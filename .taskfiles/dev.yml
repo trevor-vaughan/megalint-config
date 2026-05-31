@@ -30,6 +30,6 @@ tasks:
     dir: "{{.ROOT_DIR}}"
 
   test:runner:
-    desc: "Run bats tests for .taskfiles/scripts/*.sh"
+    desc: "Run bats tests for shell scripts (tests/*.bats)"
     cmds:
       - bats {{.ROOT_DIR}}/tests/*.bats

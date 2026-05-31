@@ -3,10 +3,9 @@ name: Custom Flavor Release
 
 "on":
   schedule:
-    - cron: "0 6 * * 0" # Weekly on Sunday 6 AM UTC
+    - cron: "0 6 * * 0" # Weekly on Sunday 6 AM UTC — refreshes :latest only
   push:
-    branches: [main]
-    paths: [".mega-linter.yml"]
+    tags: ["v*"] # Tag pushes publish versioned, composite-tagged releases
   workflow_dispatch:
     inputs:
       base_image:
@@ -45,26 +44,27 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Organization membership check
-        if: github.ref != 'refs/heads/main'
+      - name: Verify actor has write access
         env:
-          GITHUB_ACTOR_NAME: ${{ github.actor }}
-          REPO_OWNER: ${{ github.repository_owner }}
           GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          # Check if actor is organization member for unprotected refs.
-          # --fail returns non-zero on HTTP 4xx/5xx (404 = not a member).
-          if ! curl --fail --silent --show-error \
-               -H "Authorization: Bearer ${GH_TOKEN}" \
-               -H "Accept: application/vnd.github.v3+json" \
-               "https://api.github.com/orgs/${REPO_OWNER}/members/${GITHUB_ACTOR_NAME}"; then
-            echo "Access denied: ${GITHUB_ACTOR_NAME} is not a member of ${REPO_OWNER}"
-            exit 1
-          fi
+          # The repo owner is a user account, not an org, so org-membership
+          # cannot gate releases. Require the triggering actor to have write,
+          # maintain, or admin permission on the repository instead.
+          perm="$(gh api "repos/${REPO}/collaborators/${ACTOR}/permission" --jq '.permission')"
+          case "${perm}" in
+            admin|write|maintain)
+              echo "Access granted: ${ACTOR} has '${perm}' permission" ;;
+            *)
+              echo "Access denied: ${ACTOR} has '${perm}' permission (need write/maintain/admin)"
+              exit 1 ;;
+          esac
 
-      - name: Determine version from upstream base image
-        id: version
+      - name: Resolve upstream base version
+        id: upstream
         env:
           DISPATCH_IMAGE: ${{ inputs.base_image }}
           GH_TOKEN: ${{ github.token }}
@@ -124,10 +124,17 @@ jobs:
           VERSION="${major}.${minor}.${patch}"
           echo "Upstream base version: ${VERSION}"
 
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "upstream_version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "base_image=${BASE_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "BASE_IMAGE=${BASE_IMAGE}" >> "$GITHUB_ENV"
           echo "FLAVOR_VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Compute release identity
+        id: identity
+        env:
+          REF_NAME: ${{ (github.event_name == 'push' && github.ref_type == 'tag') && github.ref_name || '' }}
+          UPSTREAM_VERSION: ${{ steps.upstream.outputs.upstream_version }}
+        run: bash scripts/compute-release-version.sh >> "$GITHUB_OUTPUT"
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -193,10 +200,32 @@ jobs:
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
             BUILD_REVISION=${{ github.sha }}
-            BUILD_VERSION=${{ steps.version.outputs.version }}
+            BUILD_VERSION=${{ steps.identity.outputs.composite || steps.upstream.outputs.upstream_version }}
 
       - name: Smoke-test image
         run: task flavor:smoke-test IMAGE_NAME=megalinter-custom-flavor IMAGE_TAG=test
+
+      - name: Assemble image tags
+        id: imagetags
+        env:
+          OWNER: ${{ github.repository_owner }}
+          COMPOSITE: ${{ steps.identity.outputs.composite }}
+          MOVE_LATEST: ${{ steps.identity.outputs.move_latest }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${OWNER}/megalinter-custom-flavor"
+          {
+            echo "tags<<TAGS_EOF"
+            if [ -n "${COMPOSITE}" ]; then
+              echo "${IMAGE}:${COMPOSITE}"
+            fi
+            echo "${IMAGE}:sha-${COMMIT_SHA}"
+            if [ "${MOVE_LATEST}" = "true" ]; then
+              echo "${IMAGE}:latest"
+            fi
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Push multi-platform image
         id: build
@@ -212,15 +241,12 @@ jobs:
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
             BUILD_REVISION=${{ github.sha }}
-            BUILD_VERSION=${{ steps.version.outputs.version }}
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor:latest
-            ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor:sha-${{ github.sha }}
+            BUILD_VERSION=${{ steps.identity.outputs.composite || steps.upstream.outputs.upstream_version }}
+          tags: ${{ steps.imagetags.outputs.tags }}
           labels: |
             org.opencontainers.image.title=MegaLinter Custom Flavor
             org.opencontainers.image.description=Custom MegaLinter flavor generated from configuration
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.version=${{ steps.identity.outputs.composite || steps.upstream.outputs.upstream_version }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.created=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
@@ -238,7 +264,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: anchore/sbom-action@e11c554f704a0b820cbf8c51673f6945e0731532 # v0.20.0
         with:
-          image: ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor:${{ steps.version.outputs.version }}
+          image: ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor@${{ steps.build.outputs.digest }}
           output-file: custom-flavor-sbom.spdx.json
           format: spdx-json
 
@@ -252,38 +278,48 @@ jobs:
           push-to-registry: true
 
       - name: Create GitHub release
-        if: github.ref == 'refs/heads/main'
+        if: steps.identity.outputs.create_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: v${{ steps.version.outputs.version }}-${{ github.run_number }}
-          RELEASE_TITLE: Custom Flavor v${{ steps.version.outputs.version }} (build ${{ github.run_number }})
-          VERSION: ${{ steps.version.outputs.version }}
-          BASE_IMAGE_REF: ${{ steps.version.outputs.base_image }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          COMPOSITE: ${{ steps.identity.outputs.composite }}
+          RELEASE_VERSION: ${{ steps.identity.outputs.release_version }}
+          IS_PRERELEASE: ${{ steps.identity.outputs.is_prerelease }}
+          MOVE_LATEST: ${{ steps.identity.outputs.move_latest }}
+          BASE_IMAGE_REF: ${{ steps.upstream.outputs.base_image }}
           REPO_OWNER: ${{ github.repository_owner }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          cat <<EOF | gh release create "${RELEASE_TAG}" \
-            --title "${RELEASE_TITLE}" \
+          IMAGE="ghcr.io/${REPO_OWNER}/megalinter-custom-flavor"
+          PRERELEASE_FLAG=""
+          if [ "${IS_PRERELEASE}" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          LATEST_LINE=""
+          if [ "${MOVE_LATEST}" = "true" ]; then
+            LATEST_LINE="- \`${IMAGE}:latest\` (moved to this release)"
+          fi
+          cat <<EOF | gh release create "${RELEASE_TAG}" ${PRERELEASE_FLAG} \
+            --title "Custom Flavor ${RELEASE_TAG} (${COMPOSITE})" \
             --notes-file -
-          ## MegaLinter Custom Flavor v${VERSION}
+          ## MegaLinter Custom Flavor ${RELEASE_VERSION}
 
           Custom MegaLinter flavor generated from configuration.
           Base image: \`${BASE_IMAGE_REF}\`
 
           ### Image Tags
-          - \`ghcr.io/${REPO_OWNER}/megalinter-custom-flavor:latest\`
-          - \`ghcr.io/${REPO_OWNER}/megalinter-custom-flavor:${VERSION}\`
-          - \`ghcr.io/${REPO_OWNER}/megalinter-custom-flavor:sha-${COMMIT_SHA}\`
+          - \`${IMAGE}:${COMPOSITE}\` (immutable)
+          - \`${IMAGE}:sha-${COMMIT_SHA}\`
+          ${LATEST_LINE}
+
+          ### Reproducibility
+          Pin the composite tag above or a digest. \`:latest\` always tracks the
+          freshest build and is not stable.
 
           ### Details
           - Supply chain attestation (SLSA provenance + SBOM) included
-          - Multi-platform support: linux/amd64, linux/arm64
-
-          ### Usage
-          \`\`\`yaml
-          container: ghcr.io/${REPO_OWNER}/megalinter-custom-flavor:${VERSION}
-          \`\`\`
+          - Multi-platform: linux/amd64, linux/arm64
 
           **Commit:** ${COMMIT_SHA}
           EOF
