@@ -332,6 +332,87 @@ megalint:
     MEGALINTER_IMAGE: '${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/oxsecurity/megalinter:v9'
 ```
 
+## Custom Flavor Image
+
+This repo builds a custom MegaLinter flavor image and publishes it to the
+GitHub Container Registry. The image is a thin layer on top of the upstream
+`ghcr.io/oxsecurity/megalinter:v9` base, with the linter selection from
+`.mega-linter.yml` baked in.
+
+### Image location
+
+```
+ghcr.io/trevor-vaughan/megalinter-custom-flavor
+```
+
+### Tagging scheme
+
+Each release publishes three tags:
+
+| Tag | Example | Meaning |
+|-----|---------|---------|
+| `latest` | `latest` | Most recent build from `main` |
+| `<semver>` | `9.5.0` | Matches the upstream MegaLinter version used as the base |
+| `sha-<commit>` | `sha-abc1234...` | Pinned to the exact commit that triggered the build |
+
+Pin to a semver tag for reproducibility; use `latest` only in
+development or when you want automatic upstream tracking.
+
+### When the image is built
+
+| Trigger | Branch | Condition |
+|---------|--------|-----------|
+| Push | `main` | Changes to `.mega-linter.yml` |
+| Schedule | `main` | Weekly (Sunday 6 AM UTC) |
+| Manual | any | `workflow_dispatch` with optional `base_image` input |
+
+### Supply-chain attestation
+
+Every published image includes:
+
+- **SLSA provenance** (`actions/attest-build-provenance`) — records the
+  build inputs, runner environment, and source commit.
+- **SBOM** (`anchore/sbom-action`) — SPDX-JSON inventory of all packages
+  in the image.
+- **SBOM attestation** (`actions/attest-sbom`) — binds the SBOM to the
+  image digest and pushes it to the registry.
+- **Image vulnerability scan** (`aquasecurity/trivy-action` +
+  `actions/attest`) — scans the published image for OS and language-level
+  CVEs. Critical and high severity findings fail the build. The SARIF
+  result is attested to the image digest.
+- **Repository scan** (MegaLinter via `actions/attest`) — runs the full
+  MegaLinter suite against the repository source and attests the SARIF
+  output to the image digest.
+
+Verify provenance with the GitHub CLI:
+
+```bash
+gh attestation verify \
+  oci://ghcr.io/trevor-vaughan/megalinter-custom-flavor:9.5.0 \
+  --owner trevor-vaughan
+```
+
+### Usage
+
+Pull the image directly:
+
+```bash
+docker pull ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest
+```
+
+Or reference it in a CI workflow:
+
+```yaml
+container: ghcr.io/trevor-vaughan/megalinter-custom-flavor:9.5.0
+```
+
+### Validation workflow
+
+PRs that touch `.mega-linter.yml`, `scripts/**`, `tests/**`,
+`pyproject.toml`, or `uv.lock` trigger the validation workflow, which
+generates the flavor, builds a test Docker image, and runs a smoke test
+— all without pushing to the registry.
+
 ## Contributing
 
 Before opening a PR, run the linter locally:
