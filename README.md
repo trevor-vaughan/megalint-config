@@ -1,6 +1,6 @@
 # Shared MegaLinter configuration
 
-----
+______________________________________________________________________
 
 > 🤖 LLM WARNING 🤖
 >
@@ -8,7 +8,7 @@
 >
 > 🤖 LLM WARNING 🤖
 
-----
+______________________________________________________________________
 
 A curated [MegaLinter](https://megalinter.io/) profile, plus the Taskfile
 glue for running it locally in a container and the SARIF-chunking scripts
@@ -20,15 +20,15 @@ projects can share one linting policy.
 
 ## What's in here
 
-| Path                                           | Purpose                                                                                                                                                             |
+| Path | Purpose |
 |------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `.mega-linter.yml`                             | The shared MegaLinter profile. Linters enabled, disabled, and configured.                                                                                           |
-| `.mega-linter.d/`                              | Drop-in directory for shared sub-configs (`.devskim.json`, `.jscpd.json`, `kics.config`, …). Anything here is auto-mounted into target repos at the workspace root. |
-| `Taskfile.yml`                                 | Top-level task entrypoint.                                                                                                                                          |
-| `.taskfiles/megalint.yml`                      | Tasks for running MegaLinter locally.                                                                                                                               |
-| `.taskfiles/scripts/megalint-run.sh`           | The linter runner. Bind-mounts target + shared configs into the container.                                                                                          |
-| `.taskfiles/scripts/megalinter-sarif-chunk.sh` | Splits SARIF into per-linter markdown for LLM-driven remediation.                                                                                                   |
-| `.github/workflows/megalinter.yml`             | CI workflow that runs MegaLinter on every push and PR.                                                                                                              |
+| `.mega-linter.yml` | The shared MegaLinter profile. Linters enabled, disabled, and configured. |
+| `.mega-linter.d/` | Drop-in directory for shared sub-configs (`.devskim.json`, `.jscpd.json`, `kics.config`, …). Anything here is auto-mounted into target repos at the workspace root. |
+| `Taskfile.yml` | Top-level task entrypoint. |
+| `.taskfiles/megalint.yml` | Tasks for running MegaLinter locally. |
+| `.taskfiles/scripts/megalint-run.sh` | The linter runner. Bind-mounts target + shared configs into the container. |
+| `.taskfiles/scripts/megalinter-sarif-chunk.sh` | Splits SARIF into per-linter markdown for LLM-driven remediation. |
+| `.github/workflows/megalinter.yml` | CI workflow that runs MegaLinter on every push and PR. |
 
 ## Custom flavor image
 
@@ -37,12 +37,12 @@ This repo also publishes a **custom MegaLinter flavor image** to
 
 ### Image tags — read this before you pin
 
-| Tag                  | Meaning                                                                                                                                                                   | Use it when                                                               |
+| Tag | Meaning | Use it when |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
-| `:latest`            | **Always the freshest build.** Moved by every release *and* by the weekly refresh that rebuilds on the newest upstream MegaLinter. **Not stable** — it changes under you. | You want the newest linters and CVE data and do not need reproducibility. |
-| `:X.Y.Z-mlA.B.C`     | **Immutable release.** `X.Y.Z` is this repo's release; `mlA.B.C` is the exact upstream MegaLinter it wraps. Never moves.                                                  | You need a reproducible, auditable scan. **Pin this** (or a digest).      |
-| `:X.Y.Z-rcN-mlA.B.C` | Pre-release. Immutable and pullable for testing. **Never** becomes `:latest`.                                                                                             | You are validating a release candidate.                                   |
-| `:sha-<commit>`      | The exact build for a commit. Immutable.                                                                                                                                  | You need to trace an image to its source commit.                          |
+| `:latest` | **Always the freshest build.** Moved by every release *and* by the weekly refresh that rebuilds on the newest upstream MegaLinter. **Not stable** — it changes under you. | You want the newest linters and CVE data and do not need reproducibility. |
+| `:X.Y.Z-mlA.B.C` | **Immutable release.** `X.Y.Z` is this repo's release; `mlA.B.C` is the exact upstream MegaLinter it wraps. Never moves. | You need a reproducible, auditable scan. **Pin this** (or a digest). |
+| `:X.Y.Z-rcN-mlA.B.C` | Pre-release. Immutable and pullable for testing. **Never** becomes `:latest`. | You are validating a release candidate. |
+| `:sha-<commit>` | The exact build for a commit. Immutable. | You need to trace an image to its source commit. |
 
 > **Reproducibility:** `:latest` is intentionally a moving target so security
 > scans get the newest rules by default. For repeatable results, pin a digest
@@ -128,13 +128,13 @@ Set `MEGALINT_TMPDIR` to any non-empty value and the runner:
 1. Creates a private staging directory adjacent to your target —
    `<parent>/.megalint_<rand>_<target-basename>/`, mode `0700`,
    dot-prefixed so it stays out of `ls` and `git status`.
-2. Hardlink-clones the source tree into staging via `rsync --link-dest`,
+1. Hardlink-clones the source tree into staging via `rsync --link-dest`,
    skipping `.git/` (the largest single contributor to prep time on any
    real repo).
-3. Drops the shared configs into staging as real copies.
-4. Bind-mounts `<target>/.git` into the staging mount read-only, so
+1. Drops the shared configs into staging as real copies.
+1. Bind-mounts `<target>/.git` into the staging mount read-only, so
    linters have full git access without per-file prep work.
-5. Mounts staging into the container, runs the lint, copies reports
+1. Mounts staging into the container, runs the lint, copies reports
    back to `<target>/megalinter-reports/`, and removes the staging dir.
 
 The target tree itself is never modified — staged configs never appear
@@ -167,6 +167,30 @@ on minimal containers you may need `apt install rsync` or
 
 The container image is pinned to `ghcr.io/oxsecurity/megalinter:v9` —
 override with `MEGALINTER_IMAGE=...` if you need a different tag.
+
+### Vulnerability-DB caching
+
+Trivy and grype download vulnerability databases on each run. By default
+the runner persists these databases in a host-side cache directory so
+they survive between runs. The cache directory is bind-mounted into the
+container at the `XDG_CACHE_HOME` target.
+
+**Default path:** `${XDG_CACHE_HOME:-$HOME/.cache}/megalint/vuln-db`
+
+Override with the `MEGALINT_VULN_CACHE` environment variable:
+
+```bash
+# Use a custom cache location
+MEGALINT_VULN_CACHE=/var/cache/megalint task megalint:run
+
+# Disable caching (old ephemeral behavior — fresh download every run)
+MEGALINT_VULN_CACHE="" task megalint:run
+```
+
+In CI, the GitHub Actions composite action exposes a `vuln-cache-dir`
+input (defaults to `~/.cache/megalint/vuln-db`). Pair it with
+`actions/cache` for persistence across workflow runs — see the dogfooding
+workflow in `.github/workflows/megalinter.yml` for an example.
 
 ## Config Inheritance
 
@@ -230,6 +254,7 @@ the shared defaults:
 
 - **`.mega-linter.yml`** — if the target already has its own top-level
   config, the runner respects it and skips mounting the shared one.
+
 - **Sub-configs** (anything in `.mega-linter.d/`) — same rule: if the
   target supplies its own copy at its repo root, the runner uses the
   target's; otherwise the shared copy from `.mega-linter.d/` is overlaid.
@@ -312,7 +337,7 @@ jobs:
 ```
 
 Inputs: `working-directory`, `validate-all-codebase`, `megalinter-image`,
-`reports-dir`, `pull-policy`. Outputs: `reports-dir`, `sarif-file`. See
+`reports-dir`, `pull-policy`, `vuln-cache-dir`. Outputs: `reports-dir`, `sarif-file`. See
 `action.yml` for defaults.
 
 ### Using in a GitLab repo
@@ -331,6 +356,87 @@ megalint:
     MEGALINT_REF: 'v1'
     MEGALINTER_IMAGE: '${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/oxsecurity/megalinter:v9'
 ```
+
+## Custom Flavor Image
+
+This repo builds a custom MegaLinter flavor image and publishes it to the
+GitHub Container Registry. The image is a thin layer on top of the upstream
+`ghcr.io/oxsecurity/megalinter:v9` base, with the linter selection from
+`.mega-linter.yml` baked in.
+
+### Image location
+
+```
+ghcr.io/trevor-vaughan/megalinter-custom-flavor
+```
+
+### Tagging scheme
+
+Each release publishes three tags:
+
+| Tag | Example | Meaning |
+| --- | ------- | ------- |
+| `latest` | `latest` | Most recent build from `main` |
+| `<semver>` | `9.5.0` | Matches the upstream MegaLinter version used as the base |
+| `sha-<commit>` | `sha-abc1234...` | Pinned to the exact commit that triggered the build |
+
+Pin to a semver tag for reproducibility; use `latest` only in
+development or when you want automatic upstream tracking.
+
+### When the image is built
+
+| Trigger | Branch | Condition |
+| ------- | ------ | --------- |
+| Push | `main` | Changes to `.mega-linter.yml` |
+| Schedule | `main` | Weekly (Sunday 6 AM UTC) |
+| Manual | any | `workflow_dispatch` with optional `base_image` input |
+
+### Supply-chain attestation
+
+Every published image includes:
+
+- **SLSA provenance** (`actions/attest-build-provenance`) — records the
+  build inputs, runner environment, and source commit.
+- **SBOM** (`anchore/sbom-action`) — SPDX-JSON inventory of all packages
+  in the image.
+- **SBOM attestation** (`actions/attest-sbom`) — binds the SBOM to the
+  image digest and pushes it to the registry.
+- **Image vulnerability scan** (`aquasecurity/trivy-action` +
+  `actions/attest`) — scans the published image for OS and language-level
+  CVEs. Critical and high severity findings fail the build. The SARIF
+  result is attested to the image digest.
+- **Repository scan** (MegaLinter via `actions/attest`) — runs the full
+  MegaLinter suite against the repository source and attests the SARIF
+  output to the image digest.
+
+Verify provenance with the GitHub CLI:
+
+```bash
+gh attestation verify \
+  oci://ghcr.io/trevor-vaughan/megalinter-custom-flavor:9.5.0 \
+  --owner trevor-vaughan
+```
+
+### Pulling the image
+
+Pull the image directly:
+
+```bash
+docker pull ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest
+```
+
+Or reference it in a CI workflow:
+
+```yaml
+container: ghcr.io/trevor-vaughan/megalinter-custom-flavor:9.5.0
+```
+
+### Validation workflow
+
+PRs that touch `.mega-linter.yml`, `scripts/**`, `tests/**`,
+`pyproject.toml`, or `uv.lock` trigger the validation workflow, which
+generates the flavor, builds a test Docker image, and runs a smoke test
+— all without pushing to the registry.
 
 ## Contributing
 

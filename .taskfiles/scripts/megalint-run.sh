@@ -53,6 +53,11 @@
 #
 # Environment variables:
 #   MEGALINT_TMPDIR    Any non-empty value selects tempdir staging.
+#   MEGALINT_VULN_CACHE
+#                      Host path for persistent vulnerability-DB cache.
+#                      Bind-mounted at /tmp/xdg-cache inside the container.
+#                      Defaults to ${XDG_CACHE_HOME:-$HOME/.cache}/megalint/vuln-db.
+#                      Set to empty string to disable (old ephemeral behavior).
 #   GITHUB_TOKEN, VALIDATE_ALL_CODEBASE, DISABLE, DISABLE_LINTERS,
 #   GITHUB_REPOSITORY, GITHUB_RUN_ID, CI
 #                      Forwarded to the container when set on the host.
@@ -99,6 +104,19 @@ SUB_CONFIG_DIR="${shared}/.mega-linter.d"
 use_tempdir=false
 if [[ -n "${MEGALINT_TMPDIR:-}" ]]; then
 	use_tempdir=true
+fi
+
+# Vulnerability-DB cache. When set (even to the default), the host
+# directory is bind-mounted at /tmp/xdg-cache so trivy/grype DBs
+# survive between runs. Empty string disables caching (old behavior).
+if [[ "${MEGALINT_VULN_CACHE+set}" == "set" && -z "${MEGALINT_VULN_CACHE}" ]]; then
+	vuln_cache=""
+else
+	vuln_cache="${MEGALINT_VULN_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/megalint/vuln-db}"
+fi
+
+if [[ -n "${vuln_cache}" ]]; then
+	mkdir -p "${vuln_cache}"
 fi
 
 # Env vars forwarded to the container.
@@ -241,6 +259,11 @@ if [[ "${apply_fixes}" == "none" ]]; then
 		-v "${workspace}/megalinter-reports:/tmp/lint/megalinter-reports:rw,z"
 		--tmpfs /tmp:rw,exec,nosuid,nodev,size=4G
 	)
+	# Persistent vulnerability-DB cache (trivy, grype). The bind mount
+	# overlays /tmp/xdg-cache on the tmpfs, so both coexist.
+	if [[ -n "${vuln_cache}" ]]; then
+		mounts+=(-v "${vuln_cache}:/tmp/xdg-cache:rw,z")
+	fi
 	# Configure tools to use the writable tmpfs for caches instead of
 	# the read-only workspace. TMPDIR is the POSIX standard; the others
 	# are tool-specific.
@@ -268,6 +291,10 @@ if [[ "${apply_fixes}" == "none" ]]; then
 	)
 else
 	mounts=(-v "${workspace}:/tmp/lint:rw,z")
+	if [[ -n "${vuln_cache}" ]]; then
+		mounts+=(-v "${vuln_cache}:/tmp/xdg-cache:rw,z")
+		env_args+=(-e "XDG_CACHE_HOME=/tmp/xdg-cache")
+	fi
 fi
 
 # In tempdir mode, .git was excluded from the rsync clone — bind-mount

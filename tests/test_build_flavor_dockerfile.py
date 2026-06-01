@@ -840,3 +840,94 @@ class TestCLIEntryPoint:
             "MEGALINTER_FLAVOR=all"
             in dockerfile_content
         )
+
+
+# ── TestDockerfileHardening ──────────────────────
+
+
+class TestDockerfileHardening:
+    """Tests for security hardening applied by
+    generate_dockerfile: HEALTHCHECK, USER suppression,
+    wget-to-curl replacement."""
+
+    def _generate(self, tmp_path, installs=None):
+        """Helper: write template and generate."""
+        template_file = tmp_path / "Dockerfile"
+        template_file.write_text(
+            MINIMAL_TEMPLATE, encoding="utf-8",
+        )
+        if installs is None:
+            installs = {
+                "apk": ["bash"],
+                "npm": [],
+                "pip": {},
+                "gem": [],
+                "cargo": [],
+                "dockerfile": [],
+            }
+        return generate_dockerfile(
+            template_file, installs, "test",
+        )
+
+    def test_healthcheck_present(self, tmp_path):
+        result = self._generate(tmp_path)
+        assert "HEALTHCHECK CMD" in result
+
+    def test_healthcheck_before_entrypoint(
+        self, tmp_path,
+    ):
+        result = self._generate(tmp_path)
+        hc_pos = result.index("HEALTHCHECK CMD")
+        ep_pos = result.index("ENTRYPOINT")
+        assert hc_pos < ep_pos
+
+    def test_user_suppression_checkov(self, tmp_path):
+        result = self._generate(tmp_path)
+        assert "checkov:skip=CKV_DOCKER_3" in result
+
+    def test_user_suppression_trivy(self, tmp_path):
+        result = self._generate(tmp_path)
+        assert "trivy:ignore:DS-0002" in result
+
+    def test_wget_replaced_with_curl(self, tmp_path):
+        installs = {
+            "apk": ["bash"],
+            "npm": [],
+            "pip": {},
+            "gem": [],
+            "cargo": [],
+            "dockerfile": [
+                (
+                    "RUN wget --tries=5 -q -O -"
+                    " https://example.com/install.sh"
+                    " | sh -s -- -b /usr/local/bin"
+                ),
+            ],
+        }
+        result = self._generate(
+            tmp_path, installs=installs,
+        )
+        assert "wget" not in result
+        assert "curl" in result
+
+    def test_wget_replacement_preserves_url(
+        self, tmp_path,
+    ):
+        installs = {
+            "apk": ["bash"],
+            "npm": [],
+            "pip": {},
+            "gem": [],
+            "cargo": [],
+            "dockerfile": [
+                (
+                    "RUN wget --tries=5 -q -O -"
+                    " https://example.com/install.sh"
+                    " | sh -s -- -b /usr/local/bin"
+                ),
+            ],
+        }
+        result = self._generate(
+            tmp_path, installs=installs,
+        )
+        assert "https://example.com/install.sh" in result

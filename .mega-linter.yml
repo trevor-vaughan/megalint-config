@@ -29,6 +29,7 @@ SARIF_REPORTER: true
 # Exclude tool directories and temporary files
 ADDITIONAL_EXCLUDED_DIRECTORIES:
   - ".agents" # AI agent configurations
+  - ".cache" # Build caches (cloned upstream sources); REPOSITORY linters bypass IGNORE_GITIGNORED_FILES
   - ".claude" # Claude AI configurations
   - ".cursor" # Cursor IDE configurations
   - ".mega-linter.d" # Shared linter sub-configs (staged at workspace root by the runner)
@@ -37,6 +38,7 @@ ADDITIONAL_EXCLUDED_DIRECTORIES:
   - ".test-output" # Test artifacts
   - ".uf" # Unbound Force tooling
   - ".venv" # Python virtual environments
+  - "custom-flavor" # Generated Dockerfile; REPOSITORY linters bypass IGNORE_GITIGNORED_FILES
   - "openspec" # OpenSpec specifications
   - "specs" # SpecKit specifications
 
@@ -171,6 +173,13 @@ REPOSITORY_DEVSKIM_CONFIG_FILE: .devskim.json
 REPOSITORY_SECRETLINT_ARGUMENTS:
   - "--secretlintignore"
   - ".secretlintignore"
+
+# TruffleHog: Path exclusions require a separate file passed via CLI flag.
+# Unlike other REPOSITORY linters, trufflehog does not support path
+# exclusion in its config file — only custom detector definitions.
+REPOSITORY_TRUFFLEHOG_ARGUMENTS:
+  - "--exclude-paths"
+  - ".trufflehog-exclude-paths.txt"
 
 # Enable GITHUB_TOKEN for zizmor security scanner
 ACTION_ZIZMOR_UNSECURED_ENV_VARIABLES:

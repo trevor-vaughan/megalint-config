@@ -11,4 +11,5 @@
 
 # Paths to skip (regex, relative to working directory).
 skip-path:
-  - "_some/_path/_to/_exclude/_replace/_me"
+  - .cache
+  - custom-flavor

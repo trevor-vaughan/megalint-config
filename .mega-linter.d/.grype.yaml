@@ -1,0 +1,11 @@
+# Grype configuration (shared template)
+# Automatically discovered by grype when placed in the workspace root.
+# Docs: https://github.com/anchore/grype#configuration
+#
+# Target repos can override this by placing their own .grype.yaml at
+# the repo root. The runner skips overlay when the target already has
+# a file with the same name.
+
+exclude:
+  - "./.cache/**"
+  - "./custom-flavor/**"

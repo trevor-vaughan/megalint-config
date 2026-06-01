@@ -1,0 +1,12 @@
+# Trivy configuration (shared template)
+# Automatically discovered by trivy when placed in the workspace root.
+# Docs: https://aquasecurity.github.io/trivy/latest/docs/configuration/
+#
+# Target repos can override this by placing their own trivy.yaml at
+# the repo root. The runner skips overlay when the target already has
+# a file with the same name.
+
+scan:
+  skip-dirs:
+    - .cache
+    - custom-flavor
