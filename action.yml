@@ -33,6 +33,13 @@ inputs:
     description: "Engine --pull= policy: always | missing | never."
     required: false
     default: "missing"
+  vuln-cache-dir:
+    description: >-
+      Host path for persistent trivy/grype vulnerability-DB cache.
+      Bind-mounted into the container so DBs survive between runs.
+      Set to empty string to disable caching.
+    required: false
+    default: "~/.cache/megalint/vuln-db"
 
 outputs:
   reports-dir:
@@ -78,8 +85,12 @@ runs:
         INPUT_MEGALINTER_IMAGE: ${{ inputs.megalinter-image }}
         INPUT_PULL_POLICY: ${{ inputs.pull-policy }}
         INPUT_VALIDATE_ALL: ${{ inputs.validate-all-codebase }}
+        INPUT_VULN_CACHE: ${{ inputs.vuln-cache-dir }}
       run: |
         set -euo pipefail
+        # Expand ~ since env vars from inputs are literal strings
+        vuln_cache="${INPUT_VULN_CACHE/#\~/$HOME}"
+        export MEGALINT_VULN_CACHE="${vuln_cache}"
         task -y megalint:run \
           TARGET="${INPUT_WORKING_DIR}" \
           MEGALINTER_IMAGE="${INPUT_MEGALINTER_IMAGE}" \

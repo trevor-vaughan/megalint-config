@@ -1,8 +1,10 @@
 # Checkov configuration for this repository.
 # Overrides the shared template from .mega-linter.d/.checkov.yml.
 
-# Jinja2 templates are code-generation sources, not deployable Dockerfiles.
-# The generated output should be scanned at build time instead.
+# Paths skipped here are generated or templated sources that should not
+# be scanned as deployable infrastructure.
 skip-path:
-  # Unsure why the inline skips aren't working for these files
+  # Generated Dockerfile; not hand-maintained source
+  - custom-flavor
+  # Jinja2 templates with inline skips that Checkov does not honour
   - scripts/templates

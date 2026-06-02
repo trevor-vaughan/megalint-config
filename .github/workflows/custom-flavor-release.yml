@@ -39,7 +39,7 @@ jobs:
       CONTAINER_ENGINE: docker
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -205,6 +205,22 @@ jobs:
       - name: Smoke-test image
         run: task flavor:smoke-test IMAGE_NAME=megalinter-custom-flavor IMAGE_TAG=test
 
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: megalinter-custom-flavor:test
+          version: v0.70.0
+          format: sarif
+          output: trivy-image-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+
+      - name: Run MegaLinter repo scan
+        id: repo-scan
+        uses: ./
+        with:
+          validate-all-codebase: "true"
+
       - name: Assemble image tags
         id: imagetags
         env:
@@ -277,6 +293,26 @@ jobs:
           sbom-path: custom-flavor-sbom.spdx.json
           push-to-registry: true
 
+      - name: Attest image vulnerability scan
+        if: github.event_name != 'pull_request'
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor
+          subject-digest: ${{ steps.build.outputs.digest }}
+          predicate-type: https://cosign.sigstore.dev/attestation/vuln/v1
+          predicate-path: trivy-image-results.sarif
+          push-to-registry: true
+
+      - name: Attest repository scan
+        if: github.event_name != 'pull_request'
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor
+          subject-digest: ${{ steps.build.outputs.digest }}
+          predicate-type: https://megalinter.io/attestation/repo-scan/v1
+          predicate-path: ${{ steps.repo-scan.outputs.sarif-file }}
+          push-to-registry: true
+
       - name: Create GitHub release
         if: steps.identity.outputs.create_release == 'true'
         env:
@@ -318,7 +354,7 @@ jobs:
           freshest build and is not stable.
 
           ### Details
-          - Supply chain attestation (SLSA provenance + SBOM) included
+          - Supply chain attestation (SLSA provenance + SBOM + vulnerability scan + repo scan) included
           - Multi-platform: linux/amd64, linux/arm64
 
           **Commit:** ${COMMIT_SHA}
