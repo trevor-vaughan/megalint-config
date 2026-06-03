@@ -20,15 +20,15 @@ projects can share one linting policy.
 
 ## What's in here
 
-| Path | Purpose |
+| Path                                           | Purpose                                                                                                                                                             |
 |------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `.mega-linter.yml` | The shared MegaLinter profile. Linters enabled, disabled, and configured. |
-| `.mega-linter.d/` | Drop-in directory for shared sub-configs (`.devskim.json`, `.jscpd.json`, `kics.config`, …). Anything here is auto-mounted into target repos at the workspace root. |
-| `Taskfile.yml` | Top-level task entrypoint. |
-| `.taskfiles/megalint.yml` | Tasks for running MegaLinter locally. |
-| `.taskfiles/scripts/megalint-run.sh` | The linter runner. Bind-mounts target + shared configs into the container. |
-| `.taskfiles/scripts/megalinter-sarif-chunk.sh` | Splits SARIF into per-linter markdown for LLM-driven remediation. |
-| `.github/workflows/megalinter.yml` | CI workflow that runs MegaLinter on every push and PR. |
+| `.mega-linter.yml`                             | The shared MegaLinter profile. Linters enabled, disabled, and configured.                                                                                           |
+| `.mega-linter.d/`                              | Drop-in directory for shared sub-configs (`.devskim.json`, `.jscpd.json`, `kics.config`, …). Anything here is auto-mounted into target repos at the workspace root. |
+| `Taskfile.yml`                                 | Top-level task entrypoint.                                                                                                                                          |
+| `.taskfiles/megalint.yml`                      | Tasks for running MegaLinter locally.                                                                                                                               |
+| `.taskfiles/scripts/megalint-run.sh`           | The linter runner. Bind-mounts target + shared configs into the container.                                                                                          |
+| `.taskfiles/scripts/megalinter-sarif-chunk.sh` | Splits SARIF into per-linter markdown for LLM-driven remediation.                                                                                                   |
+| `.github/workflows/megalinter.yml`             | CI workflow that runs MegaLinter on every push and PR.                                                                                                              |
 
 ## Custom flavor image
 
@@ -37,12 +37,12 @@ This repo also publishes a **custom MegaLinter flavor image** to
 
 ### Image tags — read this before you pin
 
-| Tag | Meaning | Use it when |
+| Tag                  | Meaning                                                                                                                                                                   | Use it when                                                               |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
-| `:latest` | **Always the freshest build.** Moved by every release *and* by the weekly refresh that rebuilds on the newest upstream MegaLinter. **Not stable** — it changes under you. | You want the newest linters and CVE data and do not need reproducibility. |
-| `:X.Y.Z-mlA.B.C` | **Immutable release.** `X.Y.Z` is this repo's release; `mlA.B.C` is the exact upstream MegaLinter it wraps. Never moves. | You need a reproducible, auditable scan. **Pin this** (or a digest). |
-| `:X.Y.Z-rcN-mlA.B.C` | Pre-release. Immutable and pullable for testing. **Never** becomes `:latest`. | You are validating a release candidate. |
-| `:sha-<commit>` | The exact build for a commit. Immutable. | You need to trace an image to its source commit. |
+| `:latest`            | **Always the freshest build.** Moved by every release *and* by the weekly refresh that rebuilds on the newest upstream MegaLinter. **Not stable** — it changes under you. | You want the newest linters and CVE data and do not need reproducibility. |
+| `:X.Y.Z-mlA.B.C`     | **Immutable release.** `X.Y.Z` is this repo's release; `mlA.B.C` is the exact upstream MegaLinter it wraps. Never moves.                                                  | You need a reproducible, auditable scan. **Pin this** (or a digest).      |
+| `:X.Y.Z-rcN-mlA.B.C` | Pre-release. Immutable and pullable for testing. **Never** becomes `:latest`.                                                                                             | You are validating a release candidate.                                   |
+| `:sha-<commit>`      | The exact build for a commit. Immutable.                                                                                                                                  | You need to trace an image to its source commit.                          |
 
 > **Reproducibility:** `:latest` is intentionally a moving target so security
 > scans get the newest rules by default. For repeatable results, pin a digest
@@ -374,22 +374,22 @@ ghcr.io/trevor-vaughan/megalinter-custom-flavor
 
 Each release publishes three tags:
 
-| Tag | Example | Meaning |
-| --- | ------- | ------- |
-| `latest` | `latest` | Most recent build from `main` |
-| `<semver>` | `9.5.0` | Matches the upstream MegaLinter version used as the base |
-| `sha-<commit>` | `sha-abc1234...` | Pinned to the exact commit that triggered the build |
+| Tag            | Example          | Meaning                                                  |
+|----------------|------------------|----------------------------------------------------------|
+| `latest`       | `latest`         | Most recent build from `main`                            |
+| `<semver>`     | `9.5.0`          | Matches the upstream MegaLinter version used as the base |
+| `sha-<commit>` | `sha-abc1234...` | Pinned to the exact commit that triggered the build      |
 
 Pin to a semver tag for reproducibility; use `latest` only in
 development or when you want automatic upstream tracking.
 
 ### When the image is built
 
-| Trigger | Branch | Condition |
-| ------- | ------ | --------- |
-| Push | `main` | Changes to `.mega-linter.yml` |
-| Schedule | `main` | Weekly (Sunday 6 AM UTC) |
-| Manual | any | `workflow_dispatch` with optional `base_image` input |
+| Trigger  | Branch | Condition                                            |
+|----------|--------|------------------------------------------------------|
+| Push     | `main` | Changes to `.mega-linter.yml`                        |
+| Schedule | `main` | Weekly (Sunday 6 AM UTC)                             |
+| Manual   | any    | `workflow_dispatch` with optional `base_image` input |
 
 ### Supply-chain attestation
 
