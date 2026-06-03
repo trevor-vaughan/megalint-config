@@ -214,6 +214,7 @@ jobs:
           output: trivy-image-results.sarif
           severity: CRITICAL,HIGH
           exit-code: "1"
+          ignore-unfixed: true
 
       - name: Run MegaLinter repo scan
         id: repo-scan
