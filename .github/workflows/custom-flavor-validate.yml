@@ -6,6 +6,10 @@ on:
   pull_request:
     paths:
       - ".mega-linter.yml"
+      - ".taskfiles/flavor.yml"
+      - ".github/workflows/custom-flavor-validate.yml"
+      - ".github/workflows/custom-flavor-release.yml"
+      - "action.yml"
       - "scripts/**"
       - "tests/**"
       - "pyproject.toml"
@@ -15,6 +19,10 @@ on:
       - "main"
     paths:
       - ".mega-linter.yml"
+      - ".taskfiles/flavor.yml"
+      - ".github/workflows/custom-flavor-validate.yml"
+      - ".github/workflows/custom-flavor-release.yml"
+      - "action.yml"
       - "scripts/**"
       - "tests/**"
       - "pyproject.toml"
@@ -57,28 +65,28 @@ jobs:
         run: task flavor:clone
 
       - name: Generate custom flavor
-        run: task flavor:generate OUTPUT_DIR=./generated-flavor FLAVOR_NAME=test-flavor
+        run: task flavor:generate FLAVOR_NAME=test-flavor
 
       - name: Validate generated flavor
-        run: task flavor:validate FLAVOR_DIR=./generated-flavor
+        run: task flavor:validate
 
       - name: Verify flavor structure
         run: |
           echo "=== Generated Flavor Structure ==="
-          find ./generated-flavor -type f -name "*.py" -o -name "*.yml" -o -name "Dockerfile" | head -20
+          find ./custom-flavor -type f -name "*.py" -o -name "*.yml" -o -name "Dockerfile" | head -20
           echo
           echo "=== Dockerfile exists ==="
-          test -f ./generated-flavor/Dockerfile && echo "✓ Dockerfile found" || echo "✗ Dockerfile missing"
+          test -f ./custom-flavor/Dockerfile && echo "✓ Dockerfile found" || echo "✗ Dockerfile missing"
           echo
           echo "=== mega-linter-flavor.yml exists ==="
-          test -f ./generated-flavor/mega-linter-flavor.yml && echo "✓ mega-linter-flavor.yml found" || echo "✗ mega-linter-flavor.yml missing"
+          test -f ./custom-flavor/mega-linter-flavor.yml && echo "✓ mega-linter-flavor.yml found" || echo "✗ mega-linter-flavor.yml missing"
 
       - name: Archive generated flavor
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: custom-flavor-validation-${{ github.sha }}-${{ github.run_attempt }}
-          path: ./generated-flavor/
+          path: ./custom-flavor/
           retention-days: 7
           if-no-files-found: error
 
@@ -115,21 +123,21 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: custom-flavor-validation-${{ github.sha }}-${{ github.run_attempt }}
-          path: ./generated-flavor
+          path: ./custom-flavor
 
       - name: Validate artifact contents
         run: |
           echo "=== Validating artifact contents ==="
-          if [[ $(find ./generated-flavor -name "*/.." -o -name "../*" | wc -l) -gt 0 ]]; then
+          if [[ $(find ./custom-flavor -name "*/.." -o -name "../*" | wc -l) -gt 0 ]]; then
             echo "Error: Suspicious paths found in artifact"
             exit 1
           fi
           echo "Artifact contents validated"
-          ls -la ./generated-flavor/
+          ls -la ./custom-flavor/
 
       - name: Verify Dockerfile exists
         run: |
-          if [ ! -f ./generated-flavor/Dockerfile ]; then
+          if [ ! -f ./custom-flavor/Dockerfile ]; then
             echo "Error: Dockerfile not found in artifact"
             exit 1
           fi
@@ -148,7 +156,7 @@ jobs:
             echo "Error: MegaLinter cache directory not found"
             exit 1
           fi
-          cp ./generated-flavor/mega-linter-flavor.yml "${CACHE_DIR}/mega-linter-flavor.yml"
+          cp ./custom-flavor/mega-linter-flavor.yml "${CACHE_DIR}/mega-linter-flavor.yml"
           echo "context=${CACHE_DIR}" >> "$GITHUB_OUTPUT"
 
       - name: Build Docker image
@@ -159,7 +167,7 @@ jobs:
         run: |
           docker build \
             -t "${IMAGE_TAG}" \
-            -f ./generated-flavor/Dockerfile \
+            -f ./custom-flavor/Dockerfile \
             --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --build-arg BUILD_REVISION="${BUILD_REVISION}" \
             --build-arg BUILD_VERSION="test" \
