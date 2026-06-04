@@ -26,15 +26,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          enable-cache: true
-
-      - name: Install Task
-        uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
-        with:
-          repo-token: ${{ github.token }}
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
 
       - name: Run all quality gates
         run: task check

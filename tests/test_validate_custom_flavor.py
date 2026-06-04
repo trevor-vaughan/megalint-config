@@ -68,356 +68,226 @@ def test_validate_flavor_missing_required_files():
         ).lower()
 
 
-def test_validate_flavor_success_with_all_files():
+def test_validate_flavor_success_with_all_files(
+    flavor_files_factory, valid_flavor_files,
+):
     """Test validate_flavor with all required files."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Create all required files
-        files_content = {
-            "mega-linter-flavor.yml": (
-                "flavor: test\n"
-                "linters: [BASH_SHELLCHECK]"
-            ),
-            "Dockerfile": (
-                "FROM oxsecurity/megalinter:v9\n"
-                "COPY . /tmp/lint"
-            ),
-        }
+    temp_dir = flavor_files_factory(valid_flavor_files)
+    result = validate_flavor(temp_dir)
 
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
-
-        result = validate_flavor(temp_dir)
-
-        assert isinstance(result, dict)
-        assert result["success"] is True
-        assert result["checks"]["files_exist"] is True
+    assert isinstance(result, dict)
+    assert result["success"] is True
+    assert result["checks"]["files_exist"] is True
 
 
-def test_validate_flavor_invalid_yaml_syntax():
+def test_validate_flavor_invalid_yaml_syntax(
+    flavor_files_factory, minimal_dockerfile,
+):
     """Test validate_flavor with invalid YAML."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        files_content = {
-            "mega-linter-flavor.yml": (
-                "invalid: yaml: [syntax here}"
-            ),
-            "Dockerfile": (
-                "FROM oxsecurity/megalinter:v9"
-            ),
-        }
+    temp_dir = flavor_files_factory({
+        "mega-linter-flavor.yml": "invalid: yaml: [syntax here}",
+        "Dockerfile": minimal_dockerfile,
+    })
 
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
+    with pytest.raises(ValidationError) as exc_info:
+        validate_flavor(temp_dir)
 
-        with pytest.raises(
-            ValidationError,
-        ) as exc_info:
-            validate_flavor(temp_dir)
-
-        error_msg = str(exc_info.value).lower()
-        assert "yaml" in error_msg
-        assert (
-            "syntax" in error_msg
-            or "parsing" in error_msg
-        )
+    error_msg = str(exc_info.value).lower()
+    assert "yaml" in error_msg
+    assert "syntax" in error_msg or "parsing" in error_msg
 
 
-def test_validate_flavor_valid_yaml_syntax():
+def test_validate_flavor_valid_yaml_syntax(
+    flavor_files_factory, valid_flavor_files,
+):
     """Test validate_flavor with valid YAML syntax."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        files_content = {
-            "mega-linter-flavor.yml": (
-                "flavor: test\n"
-                "linters: [BASH_SHELLCHECK]"
-            ),
-            "Dockerfile": (
-                "FROM oxsecurity/megalinter:v9\n"
-                "COPY . /tmp/lint"
-            ),
-        }
+    temp_dir = flavor_files_factory(valid_flavor_files)
+    result = validate_flavor(temp_dir)
 
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
-
-        result = validate_flavor(temp_dir)
-
-        assert result["success"] is True
-        assert result["checks"]["yaml_valid"] is True
+    assert result["success"] is True
+    assert result["checks"]["yaml_valid"] is True
 
 
-def test_validate_flavor_missing_flavor_field():
+def test_validate_flavor_missing_flavor_field(
+    flavor_files_factory, minimal_dockerfile,
+):
     """Test missing 'flavor' field."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        files_content = {
-            "mega-linter-flavor.yml": (
-                "linters: [BASH_SHELLCHECK]"
-            ),
-            "Dockerfile": (
-                "FROM oxsecurity/megalinter:v9"
-            ),
-        }
+    temp_dir = flavor_files_factory({
+        "mega-linter-flavor.yml": "linters: [BASH_SHELLCHECK]",
+        "Dockerfile": minimal_dockerfile,
+    })
 
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
+    with pytest.raises(ValidationError) as exc_info:
+        validate_flavor(temp_dir)
 
-        with pytest.raises(
-            ValidationError,
-        ) as exc_info:
-            validate_flavor(temp_dir)
-
-        error_msg = str(exc_info.value).lower()
-        assert "flavor" in error_msg
-        assert "field" in error_msg
+    error_msg = str(exc_info.value).lower()
+    assert "flavor" in error_msg
+    assert "field" in error_msg
 
 
-def test_validate_flavor_missing_linters_field():
+def test_validate_flavor_missing_linters_field(
+    flavor_files_factory, minimal_dockerfile,
+):
     """Test missing 'linters' field."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        files_content = {
-            "mega-linter-flavor.yml": "flavor: test",
-            "Dockerfile": (
-                "FROM oxsecurity/megalinter:v9"
-            ),
-        }
+    temp_dir = flavor_files_factory({
+        "mega-linter-flavor.yml": "flavor: test",
+        "Dockerfile": minimal_dockerfile,
+    })
 
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
+    with pytest.raises(ValidationError) as exc_info:
+        validate_flavor(temp_dir)
 
-        with pytest.raises(
-            ValidationError,
-        ) as exc_info:
-            validate_flavor(temp_dir)
-
-        error_msg = str(exc_info.value).lower()
-        assert "linters" in error_msg
-        assert "field" in error_msg
+    error_msg = str(exc_info.value).lower()
+    assert "linters" in error_msg
+    assert "field" in error_msg
 
 
-def test_validate_flavor_empty_linters():
+def test_validate_flavor_empty_linters(
+    flavor_files_factory, minimal_dockerfile,
+):
     """Test empty linters list."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        files_content = {
-            "mega-linter-flavor.yml": (
-                "flavor: test\nlinters: []"
-            ),
-            "Dockerfile": (
-                "FROM oxsecurity/megalinter:v9"
-            ),
-        }
+    temp_dir = flavor_files_factory({
+        "mega-linter-flavor.yml": "flavor: test\nlinters: []",
+        "Dockerfile": minimal_dockerfile,
+    })
 
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
+    with pytest.raises(ValidationError) as exc_info:
+        validate_flavor(temp_dir)
 
-        with pytest.raises(
-            ValidationError,
-        ) as exc_info:
-            validate_flavor(temp_dir)
-
-        error_msg = str(exc_info.value).lower()
-        assert "linters" in error_msg
-        assert (
-            "empty" in error_msg
-            or "least 1" in error_msg
-        )
+    error_msg = str(exc_info.value).lower()
+    assert "linters" in error_msg
+    assert "empty" in error_msg or "least 1" in error_msg
 
 
-def test_validate_flavor_valid_content():
+def test_validate_flavor_valid_content(flavor_files_factory):
     """Test validate_flavor with valid content."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        files_content = {
-            "mega-linter-flavor.yml": (
-                "flavor: test-flavor\n"
-                "linters:"
-                " [BASH_SHELLCHECK, PYTHON_PYLINT]"
-            ),
-            "Dockerfile": (
-                "FROM oxsecurity/megalinter:v9\n"
-                "COPY . /tmp/lint"
-            ),
-        }
+    temp_dir = flavor_files_factory({
+        "mega-linter-flavor.yml": (
+            "flavor: test-flavor\n"
+            "linters: [BASH_SHELLCHECK, PYTHON_PYLINT]"
+        ),
+        "Dockerfile": "FROM oxsecurity/megalinter:v9\nCOPY . /tmp/lint",
+    })
 
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
-
-        result = validate_flavor(temp_dir)
-
-        assert result["success"] is True
-        assert result["checks"]["content_valid"] is True
+    result = validate_flavor(temp_dir)
+    assert result["success"] is True
+    assert result["checks"]["content_valid"] is True
 
 
-def test_validate_flavor_dockerfile_missing_from():
+def test_validate_flavor_dockerfile_missing_from(
+    flavor_files_factory, minimal_flavor_yml,
+):
     """Test Dockerfile missing FROM directive."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        files_content = {
-            "mega-linter-flavor.yml": (
-                "flavor: test\n"
-                "linters: [BASH_SHELLCHECK]"
-            ),
-            "Dockerfile": (
-                "RUN echo 'missing FROM directive'"
-            ),
-        }
+    temp_dir = flavor_files_factory({
+        "mega-linter-flavor.yml": minimal_flavor_yml,
+        "Dockerfile": "RUN echo 'missing FROM directive'",
+    })
 
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
+    with pytest.raises(ValidationError) as exc_info:
+        validate_flavor(temp_dir)
 
-        with pytest.raises(
-            ValidationError,
-        ) as exc_info:
-            validate_flavor(temp_dir)
-
-        error_msg = str(exc_info.value).lower()
-        assert "dockerfile" in error_msg
-        assert "from" in error_msg
-        assert "at least one" in error_msg
+    error_msg = str(exc_info.value).lower()
+    assert "dockerfile" in error_msg
+    assert "from" in error_msg
+    assert "at least one" in error_msg
 
 
-def test_validate_flavor_multistage_dockerfile():
+def test_validate_flavor_multistage_dockerfile(
+    flavor_files_factory, minimal_flavor_yml,
+):
     """Test Dockerfile with ARG before FROM passes."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        files_content = {
-            "mega-linter-flavor.yml": (
-                "flavor: test\n"
-                "linters: [BASH_SHELLCHECK]"
-            ),
-            "Dockerfile": (
-                "ARG SHELLCHECK_VERSION=v0.11.0\n"
-                "FROM koalaman/shellcheck:"
-                "${SHELLCHECK_VERSION} AS shellcheck\n"
-                "FROM python:3.14-alpine3.23\n"
-                "COPY --from=shellcheck"
-                " /bin/shellcheck /usr/bin/shellcheck\n"
-                "RUN rm -rf /var/cache/apk/*"
-            ),
-        }
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
+    temp_dir = flavor_files_factory({
+        "mega-linter-flavor.yml": minimal_flavor_yml,
+        "Dockerfile": (
+            "ARG SHELLCHECK_VERSION=v0.11.0\n"
+            "FROM koalaman/shellcheck:${SHELLCHECK_VERSION} AS shellcheck\n"
+            "FROM python:3.14-alpine3.23\n"
+            "COPY --from=shellcheck /bin/shellcheck /usr/bin/shellcheck\n"
+            "RUN rm -rf /var/cache/apk/*"
+        ),
+    })
 
-        result = validate_flavor(temp_dir)
-        assert result["success"] is True
+    result = validate_flavor(temp_dir)
+    assert result["success"] is True
 
 
-def test_validate_flavor_dockerfile_legitimate_cleanup():
+def test_validate_flavor_dockerfile_legitimate_cleanup(
+    flavor_files_factory, minimal_flavor_yml,
+):
     """Test Dockerfile with legitimate rm -rf patterns passes."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        files_content = {
-            "mega-linter-flavor.yml": (
-                "flavor: test\n"
-                "linters: [BASH_SHELLCHECK]"
-            ),
-            "Dockerfile": (
-                "FROM python:3.14-alpine3.23\n"
-                "RUN apk add --no-cache bash \\\n"
-                "    && rm -rf /var/cache/apk/* \\\n"
-                "    && rm -rf /root/.cache \\\n"
-                "    && rm -rf /tmp/*\n"
-                "COPY . /app"
-            ),
-        }
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
+    temp_dir = flavor_files_factory({
+        "mega-linter-flavor.yml": minimal_flavor_yml,
+        "Dockerfile": (
+            "FROM python:3.14-alpine3.23\n"
+            "RUN apk add --no-cache bash \\\n"
+            "    && rm -rf /var/cache/apk/* \\\n"
+            "    && rm -rf /root/.cache \\\n"
+            "    && rm -rf /tmp/*\n"
+            "COPY . /app"
+        ),
+    })
 
-        result = validate_flavor(temp_dir)
-        assert result["success"] is True
+    result = validate_flavor(temp_dir)
+    assert result["success"] is True
 
 
-def test_validate_flavor_dockerfile_missing_copy():
+def test_validate_flavor_dockerfile_missing_copy(
+    flavor_files_factory, minimal_flavor_yml,
+):
     """Test Dockerfile missing COPY or ADD commands."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        files_content = {
-            "mega-linter-flavor.yml": (
-                "flavor: test\n"
-                "linters: [BASH_SHELLCHECK]"
-            ),
-            "Dockerfile": (
-                "FROM oxsecurity/megalinter:v9\n"
-                "RUN echo 'no copy or add'"
-            ),
-        }
+    temp_dir = flavor_files_factory({
+        "mega-linter-flavor.yml": minimal_flavor_yml,
+        "Dockerfile": (
+            "FROM oxsecurity/megalinter:v9\n"
+            "RUN echo 'no copy or add'"
+        ),
+    })
 
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
+    with pytest.raises(ValidationError) as exc_info:
+        validate_flavor(temp_dir)
 
-        with pytest.raises(
-            ValidationError,
-        ) as exc_info:
-            validate_flavor(temp_dir)
-
-        error_msg = str(exc_info.value).lower()
-        assert "dockerfile" in error_msg
-        assert (
-            "copy" in error_msg or "add" in error_msg
-        )
+    error_msg = str(exc_info.value).lower()
+    assert "dockerfile" in error_msg
+    assert "copy" in error_msg or "add" in error_msg
 
 
-def test_validate_flavor_dockerfile_invalid_syntax():
+def test_validate_flavor_dockerfile_invalid_syntax(
+    flavor_files_factory, minimal_flavor_yml,
+):
     """Test Dockerfile with invalid syntax."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        files_content = {
-            "mega-linter-flavor.yml": (
-                "flavor: test\n"
-                "linters: [BASH_SHELLCHECK]"
-            ),
-            "Dockerfile": (
-                "FROM oxsecurity/megalinter:v9\n"
-                "RUN rm -rf /"
-                " # dangerous command injection"
-            ),
-        }
+    temp_dir = flavor_files_factory({
+        "mega-linter-flavor.yml": minimal_flavor_yml,
+        "Dockerfile": (
+            "FROM oxsecurity/megalinter:v9\n"
+            "RUN rm -rf / # dangerous command injection"
+        ),
+    })
 
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
+    with pytest.raises(ValidationError) as exc_info:
+        validate_flavor(temp_dir)
 
-        with pytest.raises(
-            ValidationError,
-        ) as exc_info:
-            validate_flavor(temp_dir)
-
-        error_msg = str(exc_info.value).lower()
-        assert "dockerfile" in error_msg
-        assert (
-            "dangerous" in error_msg
-            or "security" in error_msg
-        )
+    error_msg = str(exc_info.value).lower()
+    assert "dockerfile" in error_msg
+    assert "dangerous" in error_msg or "security" in error_msg
 
 
-def test_validate_flavor_valid_dockerfile():
+def test_validate_flavor_valid_dockerfile(flavor_files_factory):
     """Test validate_flavor with valid Dockerfile."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        files_content = {
-            "mega-linter-flavor.yml": (
-                "flavor: test-flavor\n"
-                "linters:"
-                " [BASH_SHELLCHECK, PYTHON_PYLINT]"
-            ),
-            "Dockerfile": (
-                "FROM oxsecurity/megalinter:v9\n"
-                "COPY . /tmp/lint\n"
-                "WORKDIR /tmp/lint"
-            ),
-        }
+    temp_dir = flavor_files_factory({
+        "mega-linter-flavor.yml": (
+            "flavor: test-flavor\n"
+            "linters: [BASH_SHELLCHECK, PYTHON_PYLINT]"
+        ),
+        "Dockerfile": (
+            "FROM oxsecurity/megalinter:v9\n"
+            "COPY . /tmp/lint\n"
+            "WORKDIR /tmp/lint"
+        ),
+    })
 
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
-
-        result = validate_flavor(temp_dir)
-
-        assert result["success"] is True
-        assert (
-            result["checks"]["dockerfile_valid"] is True
-        )
+    result = validate_flavor(temp_dir)
+    assert result["success"] is True
+    assert result["checks"]["dockerfile_valid"] is True
 
 
 def test_cli_main_function_exists():
@@ -466,41 +336,17 @@ def test_cli_missing_directory():
     )
 
 
-def test_cli_successful_validation():
+def test_cli_successful_validation(flavor_files_factory, valid_flavor_files):
     """Test CLI with valid flavor."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Create valid flavor files
-        files_content = {
-            "mega-linter-flavor.yml": (
-                "flavor: test-flavor\n"
-                "linters: [BASH_SHELLCHECK]"
-            ),
-            "Dockerfile": (
-                "FROM oxsecurity/megalinter:v9\n"
-                "COPY . /tmp/lint"
-            ),
-        }
+    temp_dir = flavor_files_factory(valid_flavor_files)
 
-        for filename, content in files_content.items():
-            file_path = Path(temp_dir) / filename
-            file_path.write_text(content)
+    result = subprocess.run(
+        [sys.executable, str(_script_path), str(temp_dir)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(_script_path),
-                temp_dir,
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        assert result.returncode == 0
-        output = (
-            result.stdout + result.stderr
-        ).lower()
-        assert (
-            "success" in output
-            or "valid" in output
-        )
+    assert result.returncode == 0
+    output = (result.stdout + result.stderr).lower()
+    assert "success" in output or "valid" in output

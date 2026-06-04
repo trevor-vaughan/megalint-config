@@ -12,5 +12,4 @@ useDefault = true
 [allowlist]
 paths = [
   '''(^|/)\.cache/''',
-  '''(^|/)custom-flavor/''',
 ]

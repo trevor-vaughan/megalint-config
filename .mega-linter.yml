@@ -38,9 +38,9 @@ ADDITIONAL_EXCLUDED_DIRECTORIES:
   - ".test-output" # Test artifacts
   - ".uf" # Unbound Force tooling
   - ".venv" # Python virtual environments
-  - "custom-flavor" # Generated Dockerfile; REPOSITORY linters bypass IGNORE_GITIGNORED_FILES
   - "openspec" # OpenSpec specifications
   - "specs" # SpecKit specifications
+  - ".lola" # Lola installation
 
 # =============================================================================
 # Enabled Linters

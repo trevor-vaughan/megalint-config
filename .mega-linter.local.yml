@@ -1,0 +1,18 @@
+# Local MegaLinter overrides for this repository.
+#
+# The runner detects this file and passes MEGALINTER_CONFIG=.mega-linter.local.yml
+# to MegaLinter, staging the shared .mega-linter.yml as .mega-linter.shared.yml
+# so we can inherit from it with EXTENDS.
+#
+# Put repo-specific exclusions and overrides here. The shared config must
+# stay generic — it applies to every target the runner is pointed at.
+
+EXTENDS: .mega-linter.shared.yml
+
+# MegaLinter's EXTENDS replaces list values by default. Opt into append
+# mode for ADDITIONAL_EXCLUDED_DIRECTORIES so we only declare the delta.
+CONFIG_PROPERTIES_TO_APPEND:
+  - ADDITIONAL_EXCLUDED_DIRECTORIES
+
+ADDITIONAL_EXCLUDED_DIRECTORIES:
+  - "custom-flavor"

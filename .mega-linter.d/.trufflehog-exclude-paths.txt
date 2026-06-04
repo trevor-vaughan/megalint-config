@@ -8,4 +8,3 @@
 # overlay when the target already has a file with the same name.
 
 ^\.cache/
-^custom-flavor/

@@ -15,7 +15,8 @@
     "**/.opencode/**",
     "**/.claude/**",
     "**/.uf/**",
-    "**/.test-output/**"
+    "**/.test-output/**",
+    "**/custom-flavor/**"
   ],
   "IgnoreRuleIds": [
     "DS137138",

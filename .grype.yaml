@@ -1,0 +1,7 @@
+# Grype configuration (repo-root override)
+# Overrides the shared template from .mega-linter.d/.grype.yaml.
+# Docs: https://github.com/anchore/grype#configuration
+
+exclude:
+  - "./.cache/**"
+  - "./custom-flavor/**"
