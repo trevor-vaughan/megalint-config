@@ -302,15 +302,27 @@ jobs:
           push-to-registry: true
 
       - name: Generate SBOM
+        id: sbom
         if: github.event_name != 'pull_request'
+        continue-on-error: true
         uses: anchore/sbom-action@e11c554f704a0b820cbf8c51673f6945e0731532 # v0.20.0
         with:
           image: ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor@${{ steps.build.outputs.digest }}
           output-file: custom-flavor-sbom.spdx.json
           format: spdx-json
 
+      - name: Upload SBOM
+        if: always() && steps.sbom.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: custom-flavor-sbom
+          path: custom-flavor-sbom.spdx.json
+          retention-days: 90
+
       - name: Attest SBOM
-        if: github.event_name != 'pull_request'
+        id: attest-sbom
+        if: github.event_name != 'pull_request' && steps.sbom.outcome == 'success'
+        continue-on-error: true
         uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1.4.1
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor
@@ -350,6 +362,7 @@ jobs:
           BASE_IMAGE_REF: ${{ steps.upstream.outputs.base_image }}
           REPO_OWNER: ${{ github.repository_owner }}
           COMMIT_SHA: ${{ github.sha }}
+          SBOM_OK: ${{ steps.attest-sbom.outcome == 'success' }}
         run: |
           set -euo pipefail
           IMAGE="ghcr.io/${REPO_OWNER}/megalinter-custom-flavor"
@@ -360,6 +373,10 @@ jobs:
           LATEST_LINE=""
           if [ "${MOVE_LATEST}" = "true" ]; then
             LATEST_LINE="- \`${IMAGE}:latest\` (moved to this release)"
+          fi
+          SBOM_NOTE=""
+          if [ "${SBOM_OK}" != "true" ]; then
+            SBOM_NOTE=" (SBOM attestation skipped — predicate exceeded 16 MiB sigstore limit; SBOM available as build artifact)"
           fi
           cat <<EOF | gh release create "${RELEASE_TAG}" ${PRERELEASE_FLAG} \
             --title "Custom Flavor ${RELEASE_TAG} (${COMPOSITE})" \
@@ -379,7 +396,7 @@ jobs:
           freshest build and is not stable.
 
           ### Details
-          - Supply chain attestation (SLSA provenance + SBOM + vulnerability scan + repo scan) included
+          - Supply chain attestation: SLSA provenance + vulnerability scan + repo scan${SBOM_NOTE}
           - Multi-platform: linux/amd64, linux/arm64
 
           **Commit:** ${COMMIT_SHA}
