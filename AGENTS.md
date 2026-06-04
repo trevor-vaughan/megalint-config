@@ -79,6 +79,23 @@ This repository implements **MegaLinter config inheritance** to reduce hardcoded
 - **Override configs**: `.mega-linter.d/` (specialized configurations that extend base, including dot-prefixed files)
 - **Runner integration**: Scripts accept optional `CONFIG_FILE` parameter
 
+### EXTENDS merge semantics
+
+MegaLinter's EXTENDS **replaces** list values by default. When a child
+config redefines a list key (e.g., `ENABLE_LINTERS`, `ADDITIONAL_EXCLUDED_DIRECTORIES`),
+the child's list fully overwrites the parent's.
+
+To **append** instead of replace, the child config can declare:
+
+```yaml
+CONFIG_PROPERTIES_TO_APPEND:
+  - ADDITIONAL_EXCLUDED_DIRECTORIES
+```
+
+Only properties explicitly listed in `CONFIG_PROPERTIES_TO_APPEND` are
+concatenated; everything else is replaced. See `.mega-linter.local.yml`
+for an example.
+
 ### ENABLE_LINTERS vs DISABLE_LINTERS precedence
 
 MegaLinter's activation logic uses an `elif` chain where `ENABLE_LINTERS`

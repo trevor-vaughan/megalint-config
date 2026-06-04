@@ -1,0 +1,8 @@
+# Trivy configuration (repo-root override)
+# Overrides the shared template from .mega-linter.d/trivy.yaml.
+# Docs: https://aquasecurity.github.io/trivy/latest/docs/configuration/
+
+scan:
+  skip-dirs:
+    - .cache
+    - custom-flavor

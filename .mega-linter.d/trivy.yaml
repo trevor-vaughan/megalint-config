@@ -9,4 +9,3 @@
 scan:
   skip-dirs:
     - .cache
-    - custom-flavor

@@ -1,0 +1,7 @@
+# TruffleHog path exclusions (repo-root override)
+# Overrides the shared template from .mega-linter.d/.trufflehog-exclude-paths.txt.
+# Regex patterns, one per line. Lines starting with # are comments.
+# Docs: https://github.com/trufflesecurity/trufflehog#excluding-paths
+
+^\.cache/
+^custom-flavor/

@@ -4,6 +4,8 @@
 # Paths skipped here are generated or templated sources that should not
 # be scanned as deployable infrastructure.
 skip-path:
+  # Cloned upstream MegaLinter source; present during CI release builds
+  - .cache
   # Generated Dockerfile; not hand-maintained source
   - custom-flavor
   # Jinja2 templates with inline skips that Checkov does not honour

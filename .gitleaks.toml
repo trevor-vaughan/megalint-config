@@ -1,0 +1,12 @@
+# Gitleaks configuration (repo-root override)
+# Overrides the shared template from .mega-linter.d/.gitleaks.toml.
+# Docs: https://github.com/gitleaks/gitleaks#configuration
+
+[extend]
+useDefault = true
+
+[allowlist]
+paths = [
+  '''(^|/)\.cache/''',
+  '''(^|/)custom-flavor/''',
+]

@@ -890,6 +890,7 @@ class TestDockerfileHardening:
         assert "trivy:ignore:DS-0002" in result
 
     def test_wget_replaced_with_curl(self, tmp_path):
+        """Test wget is replaced with curl and URL is preserved."""
         installs = {
             "apk": ["bash"],
             "npm": [],
@@ -904,30 +905,9 @@ class TestDockerfileHardening:
                 ),
             ],
         }
-        result = self._generate(
-            tmp_path, installs=installs,
-        )
+        result = self._generate(tmp_path, installs=installs)
+
+        # Combined assertions from both tests
         assert "wget" not in result
         assert "curl" in result
-
-    def test_wget_replacement_preserves_url(
-        self, tmp_path,
-    ):
-        installs = {
-            "apk": ["bash"],
-            "npm": [],
-            "pip": {},
-            "gem": [],
-            "cargo": [],
-            "dockerfile": [
-                (
-                    "RUN wget --tries=5 -q -O -"
-                    " https://example.com/install.sh"
-                    " | sh -s -- -b /usr/local/bin"
-                ),
-            ],
-        }
-        result = self._generate(
-            tmp_path, installs=installs,
-        )
         assert "https://example.com/install.sh" in result
