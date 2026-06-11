@@ -9,3 +9,4 @@
 scan:
   skip-dirs:
     - .cache
+    - megalinter-reports
