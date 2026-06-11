@@ -1,6 +1,6 @@
 [project]
 name = "megalinter-shared-config"
-version = "0.1.0"
+version = "0.1.1"
 description = "Shared MegaLinter configuration and custom flavor generation tooling"
 requires-python = ">=3.10"
 # Runtime deps used by scripts/ (flavor generation, validation, config parsing)
