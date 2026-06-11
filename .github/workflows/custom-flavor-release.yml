@@ -245,6 +245,13 @@ jobs:
         uses: ./
         with:
           validate-all-codebase: "true"
+          # Reuse the flavor image already built and loaded above. Pulling
+          # the upstream image here would put a second ~10 GB MegaLinter
+          # image on the runner's Docker partition, exhausting disk (ENOSPC)
+          # and failing the megalint:pull task. Scanning with the shipped
+          # flavor also makes the repo-scan attestation reflect that image.
+          megalinter-image: megalinter-custom-flavor:test
+          pull-policy: never
 
       - name: Assemble image tags
         id: imagetags

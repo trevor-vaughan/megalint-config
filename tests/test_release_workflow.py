@@ -190,6 +190,53 @@ def test_supply_chain_attestation_steps():
     )
 
 
+def test_repo_scan_reuses_built_image():
+    """Repo scan must reuse the locally-built flavor image, not pull upstream.
+
+    Regression guard for a disk-exhaustion failure: the release job builds
+    the custom-flavor image with `load: true` (~10 GB in the Docker store),
+    then the repo-scan step (`uses: ./`) ran `task megalint:run` with the
+    action's default image (`ghcr.io/oxsecurity/megalinter:v9`). The `pull`
+    task's status gate keys on image *presence*, so the upstream image —
+    absent locally — was pulled: a second ~10 GB image that overflowed
+    ubuntu-latest's Docker partition (ENOSPC), failing `megalint:pull`
+    (Task exit 201).
+
+    Pointing the scan at the already-loaded `megalinter-custom-flavor:test`
+    tag makes the presence gate pass, so no second image is pulled. It also
+    makes the downstream repo-scan attestation reflect the shipped image.
+    """
+    workflow_path = Path(
+        ".github/workflows/custom-flavor-release.yml",
+    )
+
+    with workflow_path.open() as f:
+        workflow = yaml.safe_load(f)
+
+    steps = workflow["jobs"]["release"]["steps"]
+    step_names = [step["name"] for step in steps]
+
+    scan_step = next(
+        step
+        for step in steps
+        if "Run MegaLinter repo scan" in step["name"]
+    )
+
+    with_params = scan_step.get("with", {})
+    assert with_params.get("megalinter-image") == "megalinter-custom-flavor:test", (
+        "Repo scan must reuse the locally-built flavor image to avoid a "
+        "second multi-gigabyte pull that exhausts the runner disk."
+    )
+    assert with_params.get("pull-policy") == "never", (
+        "Repo scan must not pull; the flavor image is already loaded."
+    )
+
+    # The image must be built before it can be reused by the scan.
+    assert step_names.index("Build image for testing") < step_names.index(
+        scan_step["name"],
+    ), "Repo scan must run after the flavor image is built and loaded."
+
+
 def test_create_release_step_gated_on_identity():
     """Release creation must be gated on the computed identity, not a ref.
 
