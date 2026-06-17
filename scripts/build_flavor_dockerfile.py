@@ -671,6 +671,41 @@ def _wget_to_curl(line: str) -> str:
     )
 
 
+# renovate: datasource=crate depName=sarif-fmt
+SARIF_FMT_VERSION = "0.8.0"
+
+SARIF_FMT_FROM = (
+    "FROM docker.io/rust:1-alpine AS sarif-fmt-builder\n"
+    "RUN apk add --no-cache musl-dev \\\n"
+    " && cargo install sarif-fmt"
+    f" --version {SARIF_FMT_VERSION}"
+    " --locked\n"
+)
+
+SARIF_FMT_COPY = (
+    "COPY --link --from=sarif-fmt-builder"
+    " /usr/local/cargo/bin/sarif-fmt"
+    " /usr/bin/sarif-fmt\n"
+)
+
+
+def _inject_sarif_fmt(dockerfile: str) -> str:
+    """Inject a multi-stage build for sarif-fmt.
+
+    Adds a Rust builder stage in the FROM section and
+    a COPY --from instruction in the COPY section so
+    every generated flavor includes sarif-fmt.
+    """
+    dockerfile = dockerfile.replace(
+        "#FROM__END",
+        f"{SARIF_FMT_FROM}#FROM__END",
+    )
+    return dockerfile.replace(
+        "#COPY__END",
+        f"{SARIF_FMT_COPY}#COPY__END",
+    )
+
+
 def _insert_healthcheck(dockerfile: str) -> str:
     """Insert a HEALTHCHECK before the first ENTRYPOINT.
 
@@ -800,6 +835,9 @@ def generate_dockerfile(
             flavor_name,
         ),
     )
+
+    # ── Extra tools (not from descriptors) ───────
+    result = _inject_sarif_fmt(result)
 
     # Add COPY for flavor config file before ENTRYPOINT
     flavor_copy = (

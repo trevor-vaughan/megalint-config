@@ -61,6 +61,12 @@ write_flavor_config = (
 build_flavor = (
     build_flavor_dockerfile.build_flavor
 )
+_inject_sarif_fmt = (
+    build_flavor_dockerfile._inject_sarif_fmt  # noqa: SLF001 — test exercises private helper
+)
+SARIF_FMT_VERSION = (
+    build_flavor_dockerfile.SARIF_FMT_VERSION
+)
 
 
 # ── Fixtures ──────────────────────────────────────
@@ -737,6 +743,84 @@ class TestGenerateDockerfile:
             template_file, installs, "test",
         )
         assert "ENTRYPOINT" in result
+
+
+# ── TestInjectSarifFmt ────────────────────────────
+
+
+class TestInjectSarifFmt:
+    def test_injects_builder_stage(self):
+        dockerfile = (
+            "#FROM__START\n"
+            "#FROM__END\n"
+            "#COPY__START\n"
+            "#COPY__END\n"
+        )
+        result = _inject_sarif_fmt(dockerfile)
+        assert "FROM docker.io/rust:1-alpine" in result
+        assert "sarif-fmt-builder" in result
+        assert "cargo install sarif-fmt" in result
+        assert f"--version {SARIF_FMT_VERSION}" in result
+
+    def test_injects_copy_instruction(self):
+        dockerfile = (
+            "#FROM__START\n"
+            "#FROM__END\n"
+            "#COPY__START\n"
+            "#COPY__END\n"
+        )
+        result = _inject_sarif_fmt(dockerfile)
+        assert (
+            "COPY --link --from=sarif-fmt-builder"
+            in result
+        )
+        assert "/usr/bin/sarif-fmt" in result
+
+    def test_preserves_existing_content(self):
+        dockerfile = (
+            "#FROM__START\n"
+            "FROM koalaman/shellcheck AS shellcheck\n"
+            "#FROM__END\n"
+            "#COPY__START\n"
+            "COPY --from=shellcheck /bin/sc /usr/bin/sc\n"
+            "#COPY__END\n"
+        )
+        result = _inject_sarif_fmt(dockerfile)
+        assert "koalaman/shellcheck" in result
+        assert "sarif-fmt-builder" in result
+        assert "/bin/sc" in result
+        assert "/usr/bin/sarif-fmt" in result
+
+    def test_full_generation_includes_sarif_fmt(
+        self, tmp_path,
+    ):
+        template_file = tmp_path / "Dockerfile"
+        template_file.write_text(
+            MINIMAL_TEMPLATE, encoding="utf-8",
+        )
+        installs = {
+            "apk": [],
+            "npm": [],
+            "pip": {},
+            "gem": [],
+            "cargo": [],
+            "dockerfile": [],
+        }
+        result = generate_dockerfile(
+            template_file, installs, "test",
+        )
+        assert "sarif-fmt-builder" in result
+        assert "COPY --link --from=sarif-fmt-builder" in (
+            result
+        )
+        # Builder stage must come before main FROM
+        from_idx = result.index(
+            "FROM docker.io/rust:1-alpine",
+        )
+        main_idx = result.index(
+            "FROM docker.io/oxsecurity/megalinter",
+        )
+        assert from_idx < main_idx
 
 
 # ── TestWriteFlavorConfig ─────────────────────────

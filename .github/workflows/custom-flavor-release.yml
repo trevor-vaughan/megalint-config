@@ -146,6 +146,9 @@ jobs:
         with:
           repo-token: ${{ github.token }}
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
       - name: Sync dependencies
         run: task dev:sync
 
@@ -323,12 +326,15 @@ jobs:
         id: attest-sbom
         if: github.event_name != 'pull_request' && steps.sbom.outcome == 'success'
         continue-on-error: true
-        uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1.4.1
-        with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor
-          subject-digest: ${{ steps.build.outputs.digest }}
-          sbom-path: custom-flavor-sbom.spdx.json
-          push-to-registry: true
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          REPO_OWNER: ${{ github.repository_owner }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign attest --yes --type spdxjson \
+            --predicate custom-flavor-sbom.spdx.json \
+            --tlog-upload=false \
+            "ghcr.io/${REPO_OWNER}/megalinter-custom-flavor@${IMAGE_DIGEST}"
 
       - name: Attest image vulnerability scan
         if: github.event_name != 'pull_request'
@@ -374,9 +380,12 @@ jobs:
           if [ "${MOVE_LATEST}" = "true" ]; then
             LATEST_LINE="- \`${IMAGE}:latest\` (moved to this release)"
           fi
+          SBOM_LABEL=""
           SBOM_NOTE=""
-          if [ "${SBOM_OK}" != "true" ]; then
-            SBOM_NOTE=" (SBOM attestation skipped — predicate exceeded 16 MiB sigstore limit; SBOM available as build artifact)"
+          if [ "${SBOM_OK}" = "true" ]; then
+            SBOM_LABEL=" + SBOM"
+          else
+            SBOM_NOTE=" (SBOM attestation failed; SBOM available as build artifact)"
           fi
           cat <<EOF | gh release create "${RELEASE_TAG}" ${PRERELEASE_FLAG} \
             --title "Custom Flavor ${RELEASE_TAG} (${COMPOSITE})" \
@@ -396,7 +405,7 @@ jobs:
           freshest build and is not stable.
 
           ### Details
-          - Supply chain attestation: SLSA provenance + vulnerability scan + repo scan${SBOM_NOTE}
+          - Supply chain attestation: SLSA provenance${SBOM_LABEL} + vulnerability scan + repo scan${SBOM_NOTE}
           - Multi-platform: linux/amd64, linux/arm64
 
           **Commit:** ${COMMIT_SHA}
