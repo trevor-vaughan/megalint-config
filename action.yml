@@ -21,7 +21,7 @@ inputs:
   megalinter-image:
     description: "MegaLinter container image to run."
     required: false
-    default: "ghcr.io/oxsecurity/megalinter:v9"
+    default: "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
   reports-dir:
     description: >-
       Where reports land on host after the run. Defaults to
@@ -33,6 +33,14 @@ inputs:
     description: "Engine --pull= policy: always | missing | never."
     required: false
     default: "missing"
+  verify:
+    description: >-
+      Attestation verification mode. Set to "skip" to bypass cosign
+      attestation checks (useful when the image has not yet been
+      published with attestations). Empty string (default) verifies
+      normally.
+    required: false
+    default: ""
   vuln-cache-dir:
     description: >-
       Host path for persistent trivy/grype vulnerability-DB cache.
@@ -56,6 +64,9 @@ runs:
       uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
       with:
         repo-token: ${{ github.token }}
+
+    - name: Install cosign
+      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
     - name: Resolve reports-dir
       id: resolve
@@ -86,6 +97,7 @@ runs:
         INPUT_PULL_POLICY: ${{ inputs.pull-policy }}
         INPUT_VALIDATE_ALL: ${{ inputs.validate-all-codebase }}
         INPUT_VULN_CACHE: ${{ inputs.vuln-cache-dir }}
+        INPUT_VERIFY: ${{ inputs.verify }}
       run: |
         set -euo pipefail
         # Expand ~ since env vars from inputs are literal strings
@@ -95,7 +107,8 @@ runs:
           TARGET="${INPUT_WORKING_DIR}" \
           MEGALINTER_IMAGE="${INPUT_MEGALINTER_IMAGE}" \
           PULL_POLICY="${INPUT_PULL_POLICY}" \
-          VALIDATE_ALL_CODEBASE="${INPUT_VALIDATE_ALL}"
+          VALIDATE_ALL_CODEBASE="${INPUT_VALIDATE_ALL}" \
+          MEGALINT_VERIFY="${INPUT_VERIFY}"
 
     - name: Relocate reports if requested
       if: ${{ always() }}

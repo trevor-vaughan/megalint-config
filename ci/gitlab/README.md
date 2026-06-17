@@ -15,8 +15,8 @@ megalint:
   extends: .megalint
   variables:
     MEGALINT_REF: 'v1'
-    # Cache the 10GB MegaLinter image via GitLab Dependency Proxy
-    MEGALINTER_IMAGE: '${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/oxsecurity/megalinter:v9'
+    # Optional: cache via GitLab Dependency Proxy
+    MEGALINTER_IMAGE: '${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/trevor-vaughan/megalinter-custom-flavor:latest'
   rules:
     # Full-tree lint on default branch
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
@@ -31,14 +31,15 @@ expose to the running job which ref the included file came from.
 
 ## Available variables
 
-| Variable                         | Default                              | Description                                     |
-|----------------------------------|--------------------------------------|-------------------------------------------------|
-| `MEGALINT_WORKING_DIRECTORY`     | `$CI_PROJECT_DIR`                    | Directory to lint.                              |
-| `MEGALINT_VALIDATE_ALL_CODEBASE` | `'false'`                            | Lint full tree (vs. PR diff).                   |
-| `MEGALINTER_IMAGE`               | `ghcr.io/oxsecurity/megalinter:v9`   | Container image to run.                         |
-| `MEGALINT_REPORTS_DIR`           | `$CI_PROJECT_DIR/megalinter-reports` | Where reports land on host.                     |
-| `MEGALINT_PULL_POLICY`           | `missing`                            | Engine `--pull=` policy.                        |
-| `MEGALINT_REF`                   | `v1`                                 | Ref of trevor-vaughan/megalint-config to clone. |
+| Variable                         | Default                                                  | Description                                       |
+|----------------------------------|----------------------------------------------------------|---------------------------------------------------|
+| `MEGALINT_WORKING_DIRECTORY`     | `$CI_PROJECT_DIR`                                        | Directory to lint.                                |
+| `MEGALINT_VALIDATE_ALL_CODEBASE` | `'false'`                                                | Lint full tree (vs. PR diff).                     |
+| `MEGALINTER_IMAGE`               | `ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest` | Container image to run.                           |
+| `MEGALINT_REPORTS_DIR`           | `$CI_PROJECT_DIR/megalinter-reports`                     | Where reports land on host.                       |
+| `MEGALINT_PULL_POLICY`           | `missing`                                                | Engine `--pull=` policy.                          |
+| `MEGALINT_REF`                   | `v1`                                                     | Ref of trevor-vaughan/megalint-config to clone.   |
+| `MEGALINT_VERIFY`                | `''`                                                     | Set to `skip` to bypass attestation verification. |
 
 ## Manual verification
 

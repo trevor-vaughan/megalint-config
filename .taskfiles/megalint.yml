@@ -1,10 +1,11 @@
 version: "3"
 
 vars:
-  MEGALINTER_IMAGE: '{{.MEGALINTER_IMAGE | default "ghcr.io/oxsecurity/megalinter:v9"}}'
+  MEGALINTER_IMAGE: '{{.MEGALINTER_IMAGE | default "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"}}'
   TARGET: "{{.TARGET | default .ROOT_DIR}}"
   APPLY_FIXES: '{{.APPLY_FIXES | default "none"}}'
   PULL_POLICY: '{{.PULL_POLICY | default "never"}}'
+  MEGALINT_VERIFY: '{{.MEGALINT_VERIFY | default ""}}'
 
 tasks:
   default:
@@ -13,7 +14,7 @@ tasks:
 
   pull:
     desc: Pull the megalinter image (set FORCE=1 to re-pull when already present)
-    prompt: The megalinter image is large 10+G. Do you want to continue?
+    prompt: The megalinter image is large (~3 GB). Do you want to continue?
     vars:
       FORCE: '{{.FORCE | default ""}}'
     status:
@@ -21,9 +22,16 @@ tasks:
     cmds:
       - "{{.CONTAINER_ENGINE}} pull {{.MEGALINTER_IMAGE}}"
 
+  verify:
+    desc: "Verify attestations on the pulled MegaLinter image using cosign"
+    deps: [pull]
+    env:
+      MEGALINT_VERIFY: "{{.MEGALINT_VERIFY}}"
+    cmd: bash "{{.TASKFILE_DIR}}/scripts/megalint-verify.sh" "{{.MEGALINTER_IMAGE}}"
+
   run:
     desc: "Run MegaLinter against TARGET (default: this repo). APPLY_FIXES=all to auto-fix."
-    deps: [pull]
+    deps: [verify]
     vars:
       VALIDATE_ALL_CODEBASE: '{{.VALIDATE_ALL_CODEBASE | default ""}}'
       CONFIG_FILE: '{{.CONFIG_FILE | default ""}}'

@@ -94,7 +94,7 @@ task -d /path/to/this/repo megalint:run TARGET=$PWD
 # Apply auto-fixes (writes changes to the target)
 task megalint:run APPLY_FIXES=all
 
-# Pre-pull the image (~10 GB). Asks for confirmation.
+# Pre-pull the image (~3 GB). Asks for confirmation.
 task megalint:pull
 ```
 
@@ -165,8 +165,9 @@ requires `rsync` (preinstalled on every major Linux distro and macOS;
 on minimal containers you may need `apt install rsync` or
 `dnf install rsync`).
 
-The container image is pinned to `ghcr.io/oxsecurity/megalinter:v9` —
-override with `MEGALINTER_IMAGE=...` if you need a different tag.
+The container image defaults to
+`ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest` — override with
+`MEGALINTER_IMAGE=...` if you need a different image or tag.
 
 ### Vulnerability-DB caching
 
@@ -191,6 +192,53 @@ In CI, the GitHub Actions composite action exposes a `vuln-cache-dir`
 input (defaults to `~/.cache/megalint/vuln-db`). Pair it with
 `actions/cache` for persistence across workflow runs — see the dogfooding
 workflow in `.github/workflows/megalinter.yml` for an example.
+
+### Attestation verification
+
+After pulling, the runner verifies image attestations using
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/).
+Four attestation types are checked: SLSA provenance, SBOM (SPDX),
+vulnerability scan, and repository scan.
+
+**Behavior by image origin:**
+
+| Image                      | cosign found                          | cosign missing              |
+|----------------------------|---------------------------------------|-----------------------------|
+| `ghcr.io/trevor-vaughan/*` | Hard-fail on any verification failure | Hard-fail (cosign required) |
+| Any other image            | Warn on verification failure          | Warn and skip               |
+
+Override with environment variables:
+
+```bash
+# Skip verification entirely
+MEGALINT_VERIFY=skip task megalint:run
+
+# Force hard-fail for any image (not just trevor-vaughan)
+MEGALINT_VERIFY_STRICT=true task megalint:run
+```
+
+In GitHub Actions, cosign is installed automatically by the composite
+action. Pass `verify: skip` to the action input to bypass verification
+(useful when bootstrapping before the first attested image is published):
+
+```yaml
+- uses: trevor-vaughan/megalint-config@v1
+  with:
+    verify: skip
+```
+
+In GitLab CI, set the `MEGALINT_VERIFY` variable on the job:
+
+```yaml
+megalint:
+  extends: .megalint
+  variables:
+    MEGALINT_VERIFY: skip
+```
+
+For other environments, install cosign in your runner image or job
+setup — the verification script warns gracefully when cosign is not
+found (unless the image is `ghcr.io/trevor-vaughan/*`).
 
 ## Config Inheritance
 
@@ -300,6 +348,8 @@ The workflow:
   workflow artifact for download.
 - Uploads the SARIF report to GitHub Code Scanning so findings appear in
   the Security tab and as inline PR annotations.
+- Verifies image attestations (SLSA provenance, SBOM, vulnerability
+  scan, repository scan) via cosign before running the linter.
 
 ### Using in another GitHub repo
 
@@ -337,8 +387,8 @@ jobs:
 ```
 
 Inputs: `working-directory`, `validate-all-codebase`, `megalinter-image`,
-`reports-dir`, `pull-policy`, `vuln-cache-dir`. Outputs: `reports-dir`, `sarif-file`. See
-`action.yml` for defaults.
+`reports-dir`, `pull-policy`, `verify`, `vuln-cache-dir`. Outputs: `reports-dir`,
+`sarif-file`. See `action.yml` for defaults.
 
 ### Using in a GitLab repo
 
@@ -354,7 +404,8 @@ megalint:
   extends: .megalint
   variables:
     MEGALINT_REF: 'v1'
-    MEGALINTER_IMAGE: '${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/oxsecurity/megalinter:v9'
+    # Optional: cache via GitLab Dependency Proxy
+    MEGALINTER_IMAGE: '${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/trevor-vaughan/megalinter-custom-flavor:latest'
 ```
 
 ## Custom Flavor Image
@@ -397,10 +448,11 @@ Every published image includes:
 
 - **SLSA provenance** (`actions/attest-build-provenance`) — records the
   build inputs, runner environment, and source commit.
-- **SBOM** (`anchore/sbom-action`) — SPDX-JSON inventory of all packages
-  in the image.
-- **SBOM attestation** (`actions/attest-sbom`) — binds the SBOM to the
-  image digest and pushes it to the registry.
+- **SBOM** (`anchore/sbom-action` + `cosign attest`) — SPDX-JSON inventory
+  of all packages in the image. Attested via cosign with
+  `--tlog-upload=false` (the SBOM exceeds Rekor's size limit, so it
+  skips the transparency log but is still cryptographically signed and
+  pushed to the OCI registry).
 - **Image vulnerability scan** (`aquasecurity/trivy-action` +
   `actions/attest`) — scans the published image for OS and language-level
   CVEs. Critical and high severity findings fail the build. The SARIF
@@ -415,6 +467,16 @@ Verify provenance with the GitHub CLI:
 gh attestation verify \
   oci://ghcr.io/trevor-vaughan/megalinter-custom-flavor:9.5.0 \
   --owner trevor-vaughan
+```
+
+Or with cosign (portable, no GitHub CLI required):
+
+```bash
+cosign verify-attestation \
+  --certificate-identity-regexp='https://github.com/trevor-vaughan/megalint-config/.*' \
+  --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
+  --type='https://slsa.dev/provenance/v1' \
+  ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest
 ```
 
 ### Pulling the image

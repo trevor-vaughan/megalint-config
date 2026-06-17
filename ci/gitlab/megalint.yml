@@ -11,9 +11,8 @@
 #     extends: .megalint
 #     variables:
 #       MEGALINT_REF: 'v1'   # MUST match the ref in include: above
-#       # Use the GitLab Dependency Proxy to cache the 10GB MegaLinter image
-#       # at group level; bumps subsequent runs from ~5min pull to seconds.
-#       MEGALINTER_IMAGE: '${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/oxsecurity/megalinter:v9'
+#       # Optional: cache via GitLab Dependency Proxy
+#       MEGALINTER_IMAGE: '${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/trevor-vaughan/megalinter-custom-flavor:latest'
 #
 # Per-event policy (validate all vs. PR diff only) is set via rules:
 # see ci/gitlab/README.md for the full caller example.
@@ -25,9 +24,10 @@
   variables:
     MEGALINT_WORKING_DIRECTORY: "$CI_PROJECT_DIR"
     MEGALINT_VALIDATE_ALL_CODEBASE: "false"
-    MEGALINTER_IMAGE: "ghcr.io/oxsecurity/megalinter:v9"
+    MEGALINTER_IMAGE: "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
     MEGALINT_REPORTS_DIR: "$CI_PROJECT_DIR/megalinter-reports"
     MEGALINT_PULL_POLICY: "missing"
+    MEGALINT_VERIFY: ""
     # Pin to match the include: ref. Override in the caller if the
     # include ref differs.
     MEGALINT_REF: "v1"

@@ -44,15 +44,14 @@ jobs:
           restore-keys: |
             vuln-db-${{ runner.os }}-
 
-      # Use the custom flavor (~3 GB) instead of the upstream full image
-      # (~10+ GB) which exceeds the free disk on ubuntu-latest runners.
       - name: Run MegaLinter via local composite action
         id: megalint
         uses: ./
         with:
-          megalinter-image: ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest
           validate-all-codebase: ${{ github.event_name == 'schedule' }}
           vuln-cache-dir: ~/.cache/megalint/vuln-db
+          # TODO: remove once the first attested custom-flavor image is published # DevSkim: ignore DS176209
+          verify: skip
 
       - name: Upload MegaLinter reports
         if: ${{ success() || failure() }}

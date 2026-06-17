@@ -8,6 +8,7 @@ set -euo pipefail
 : "${MEGALINTER_IMAGE:?must be set by the template}"
 : "${MEGALINT_PULL_POLICY:?must be set by the template}"
 : "${MEGALINT_VALIDATE_ALL_CODEBASE:=false}"
+: "${MEGALINT_VERIFY:=}"
 
 # Pin Task version. Update via Task 0 verification process when bumping.
 TASK_VERSION='v3.51.1'
@@ -25,7 +26,8 @@ VALIDATE_ALL_CODEBASE="${MEGALINT_VALIDATE_ALL_CODEBASE}" \
 	task -y megalint:run \
 	TARGET="${MEGALINT_WORKING_DIRECTORY}" \
 	MEGALINTER_IMAGE="${MEGALINTER_IMAGE}" \
-	PULL_POLICY="${MEGALINT_PULL_POLICY}"
+	PULL_POLICY="${MEGALINT_PULL_POLICY}" \
+	MEGALINT_VERIFY="${MEGALINT_VERIFY}"
 
 # Always move the log into the default reports-dir first (if both exist),
 # so the log travels with the reports regardless of relocation.
