@@ -248,6 +248,8 @@ jobs:
         uses: ./
         with:
           validate-all-codebase: "true"
+          # TODO: remove once the first attested custom-flavor image is published # DevSkim: ignore DS176209
+          verify: skip
 
       - name: Assemble image tags
         id: imagetags
