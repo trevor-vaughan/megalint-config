@@ -20,11 +20,17 @@ if [[ -z "${IMAGE}" ]]; then
 	exit 1
 fi
 
+# GitHub Actions collapsible group for verification output.
+gh_group() { [[ "${GITHUB_ACTIONS:-}" == "true" ]] && echo "::group::$1" || true; }
+gh_endgroup() { [[ "${GITHUB_ACTIONS:-}" == "true" ]] && echo "::endgroup::" || true; }
+
 # ── Skip gate ───────────────────────────────────────────────────────
 if [[ "${MEGALINT_VERIFY:-}" == "skip" ]]; then
 	echo "MEGALINT_VERIFY=skip — skipping attestation verification for ${IMAGE}"
 	exit 0
 fi
+
+gh_group "Verify attestations: ${IMAGE}"
 
 # ── Determine failure mode ──────────────────────────────────────────
 # trevor-vaughan images: hard-fail on missing attestations.
@@ -36,9 +42,11 @@ if ! command -v cosign >/dev/null 2>&1; then
 	if [[ "${IMAGE}" == ghcr.io/trevor-vaughan/* || "${MEGALINT_VERIFY_STRICT:-}" == "true" ]]; then
 		echo "ERROR: cosign is not installed but is required to verify ${IMAGE}" >&2
 		echo "Install cosign: https://docs.sigstore.dev/cosign/system_config/installation/" >&2
+		gh_endgroup
 		exit 1
 	else
 		echo "WARNING: cosign not found — skipping attestation verification for ${IMAGE}"
+		gh_endgroup
 		exit 0
 	fi
 fi
@@ -77,12 +85,15 @@ done
 if [[ ${failures} -gt 0 ]]; then
 	if [[ "${IMAGE}" == ghcr.io/trevor-vaughan/* || "${MEGALINT_VERIFY_STRICT:-}" == "true" ]]; then
 		echo "ERROR: ${failures} attestation(s) failed verification for ${IMAGE}" >&2
+		gh_endgroup
 		exit 1
 	else
 		echo "WARNING: ${failures} attestation(s) could not be verified for ${IMAGE}"
+		gh_endgroup
 		exit 0
 	fi
 fi
 
 echo "All attestations verified for ${IMAGE}"
+gh_endgroup
 exit 0

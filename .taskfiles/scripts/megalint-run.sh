@@ -67,6 +67,10 @@
 
 set -euo pipefail
 
+# GitHub Actions collapsible group helpers (no-op outside CI).
+gh_group() { [[ "${GITHUB_ACTIONS:-}" == "true" ]] && echo "::group::$1" || true; }
+gh_endgroup() { [[ "${GITHUB_ACTIONS:-}" == "true" ]] && echo "::endgroup::" || true; }
+
 usage() {
 	echo "usage: $0 <shared-dir> <target-dir> <engine> <image> <apply-fixes> [pull-policy] [config_file]" >&2
 	exit 2
@@ -128,6 +132,19 @@ FORWARDED_ENV_VARS=(
 	GITHUB_REPOSITORY
 	GITHUB_RUN_ID
 	CI
+	# MegaLinter's console reporter emits ::group::/::endgroup:: markers
+	# for collapsible sections when it detects GitHub Actions. Without
+	# this var the output is one flat stream that GitHub truncates.
+	GITHUB_ACTIONS
+	# PR comment reporter needs GITHUB_REF (refs/pull/NNN/merge) to
+	# identify the pull request, with GITHUB_SHA as a fallback.
+	GITHUB_REF
+	GITHUB_SHA
+	# GitHub Enterprise overrides for API and web UI base URLs.
+	GITHUB_SERVER_URL
+	GITHUB_API_URL
+	# Opt-in PR comment with lint summary (needs pull-requests: write).
+	GITHUB_COMMENT_REPORTER
 )
 env_args=(
 	-e "SHOW_ELAPSED_TIME=true"
@@ -215,6 +232,8 @@ stage_in() {
 	fi
 }
 
+gh_group "Stage shared configs into workspace"
+
 # Main MegaLinter config. Target wins at every name we might stage:
 # if the target already supplies a file, the shared copy is NOT staged
 # over it. This is unconditional — a 0-byte file is treated as the
@@ -250,6 +269,8 @@ for cfg in "${SUB_CONFIG_DIR}"/*; do
 	stage_in "${cfg}" "${staged_path}"
 done
 shopt -u nullglob dotglob
+
+gh_endgroup
 
 # Mount strategy.
 if [[ "${apply_fixes}" == "none" ]]; then

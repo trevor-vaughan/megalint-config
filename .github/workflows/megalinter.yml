@@ -50,6 +50,7 @@ jobs:
         with:
           validate-all-codebase: ${{ github.event_name == 'schedule' }}
           vuln-cache-dir: ~/.cache/megalint/vuln-db
+          github-comment: "true"
           # TODO: remove once the first attested custom-flavor image is published # DevSkim: ignore DS176209
           verify: skip
 
