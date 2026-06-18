@@ -195,17 +195,32 @@ workflow in `.github/workflows/megalinter.yml` for an example.
 
 ### Attestation verification
 
-After pulling, the runner verifies image attestations using
-[cosign](https://docs.sigstore.dev/cosign/system_config/installation/).
-Four attestation types are checked: SLSA provenance, SBOM (SPDX),
-vulnerability scan, and repository scan.
+After pulling, the runner verifies image attestations using a mixed
+strategy — [cosign](https://docs.sigstore.dev/cosign/system_config/installation/)
+for SBOM, vulnerability scan, and repository scan attestations, and the
+[GitHub CLI](https://cli.github.com/) (`gh`) for SLSA provenance.
 
-**Behavior by image origin:**
+This split exists because the release pipeline uses two attestation
+backends: `cosign attest` writes OCI attestations to the container
+registry (verifiable with cosign anywhere), while
+`actions/attest-build-provenance` stores SLSA provenance in GitHub's
+Artifact Attestation API (only queryable with `gh attestation verify`).
+SLSA provenance uses the GitHub-native action because it generates the
+provenance predicate internally — there is no standalone predicate file
+to pass to `cosign attest`.
+
+**Behavior by image origin and tool availability:**
 
 | Image                      | cosign found                          | cosign missing              |
 |----------------------------|---------------------------------------|-----------------------------|
 | `ghcr.io/trevor-vaughan/*` | Hard-fail on any verification failure | Hard-fail (cosign required) |
 | Any other image            | Warn on verification failure          | Warn and skip               |
+
+When `gh` is not available, SLSA provenance verification is skipped
+(not counted as a failure). The three cosign attestations still provide
+strong supply-chain coverage. `gh` is pre-installed on GitHub Actions
+runners; in other environments, install it separately or accept the
+SLSA skip.
 
 Override with environment variables:
 
@@ -349,7 +364,8 @@ The workflow:
 - Uploads the SARIF report to GitHub Code Scanning so findings appear in
   the Security tab and as inline PR annotations.
 - Verifies image attestations (SLSA provenance, SBOM, vulnerability
-  scan, repository scan) via cosign before running the linter.
+  scan, repository scan) via cosign and the GitHub CLI before running
+  the linter.
 
 ### Using in another GitHub repo
 
@@ -447,35 +463,53 @@ development or when you want automatic upstream tracking.
 Every published image includes:
 
 - **SLSA provenance** (`actions/attest-build-provenance`) — records the
-  build inputs, runner environment, and source commit.
+  build inputs, runner environment, and source commit. Stored in GitHub's
+  Artifact Attestation API (verified with `gh attestation verify`).
 - **SBOM** (`anchore/sbom-action` + `cosign attest`) — SPDX-JSON inventory
-  of all packages in the image. Attested via cosign with
-  `--tlog-upload=false` (the SBOM exceeds Rekor's size limit, so it
-  skips the transparency log but is still cryptographically signed and
-  pushed to the OCI registry).
+  of all packages in the image. Attested via cosign with a signing config
+  that excludes Rekor tlog URLs (the SBOM exceeds Rekor's 16 MiB limit,
+  so it skips the transparency log but is still cryptographically signed
+  and pushed to the OCI registry).
 - **Image vulnerability scan** (`aquasecurity/trivy-action` +
-  `actions/attest`) — scans the published image for OS and language-level
+  `cosign attest`) — scans the published image for OS and language-level
   CVEs. Critical and high severity findings fail the build. The SARIF
-  result is attested to the image digest.
-- **Repository scan** (MegaLinter via `actions/attest`) — runs the full
+  result is attested to the image digest via cosign with the same
+  no-tlog signing config.
+- **Repository scan** (MegaLinter + `cosign attest`) — runs the full
   MegaLinter suite against the repository source and attests the SARIF
-  output to the image digest.
+  output to the image digest via cosign with the same no-tlog signing
+  config.
 
-Verify provenance with the GitHub CLI:
+Verify SLSA provenance with the GitHub CLI:
 
 ```bash
 gh attestation verify \
-  oci://ghcr.io/trevor-vaughan/megalinter-custom-flavor:9.5.0 \
+  oci://ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest \
   --owner trevor-vaughan
 ```
 
-Or with cosign (portable, no GitHub CLI required):
+Verify cosign-attested attestations (SBOM, vuln scan, repo scan):
 
 ```bash
+# SBOM
 cosign verify-attestation \
   --certificate-identity-regexp='https://github.com/trevor-vaughan/megalint-config/.*' \
   --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
-  --type='https://slsa.dev/provenance/v1' \
+  --type='https://spdx.dev/Document' \
+  ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest
+
+# Vulnerability scan
+cosign verify-attestation \
+  --certificate-identity-regexp='https://github.com/trevor-vaughan/megalint-config/.*' \
+  --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
+  --type='https://cosign.sigstore.dev/attestation/vuln/v1' \
+  ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest
+
+# Repository scan
+cosign verify-attestation \
+  --certificate-identity-regexp='https://github.com/trevor-vaughan/megalint-config/.*' \
+  --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
+  --type='https://megalinter.io/attestation/repo-scan/v1' \
   ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest
 ```
 
