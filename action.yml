@@ -35,10 +35,11 @@ inputs:
     default: "missing"
   verify:
     description: >-
-      Attestation verification mode. Set to "skip" to bypass cosign
+      Attestation verification mode. Set to "skip" to bypass
       attestation checks (useful when the image has not yet been
       published with attestations). Empty string (default) verifies
-      normally.
+      SBOM, vulnerability scan, and repository scan via cosign, and
+      SLSA provenance via the GitHub CLI.
     required: false
     default: ""
   vuln-cache-dir:

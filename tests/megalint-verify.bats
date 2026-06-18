@@ -1,5 +1,11 @@
 #!/usr/bin/env bats
 # Tests for .taskfiles/scripts/megalint-verify.sh
+#
+# The verify script uses a mixed verification strategy:
+#   - cosign verify-attestation for vuln scan + repo scan (hard-fail, 2 calls)
+#   - cosign verify-attestation for SBOM (warn-only, 1 call) — see FIXME in script
+#   - gh attestation verify for SLSA provenance (1 call)
+# Tests stub both tools to validate all code paths.
 
 setup() {
   BATS_TEST_TMPDIR="$(mktemp -d)"
@@ -9,9 +15,11 @@ setup() {
   export REPO_ROOT
   VERIFY="${REPO_ROOT}/.taskfiles/scripts/megalint-verify.sh"
 
-  # Stub cosign: records calls, exits based on STUB_COSIGN_EXIT
+  # Stub directory — both cosign and gh stubs live here
   STUB_DIR="${BATS_TEST_TMPDIR}/stub-bin"
   mkdir -p "${STUB_DIR}"
+
+  # Stub cosign: records calls, exits based on STUB_COSIGN_EXIT
   cat > "${STUB_DIR}/cosign" <<'STUB'
 #!/usr/bin/env bash
 echo "$@" >> "${COSIGN_CALLS_FILE}"
@@ -21,7 +29,17 @@ STUB
   export COSIGN_CALLS_FILE="${BATS_TEST_TMPDIR}/cosign-calls"
   export STUB_COSIGN_EXIT=0
 
-  # Ensure no real cosign interferes
+  # Stub gh: records calls, exits based on STUB_GH_EXIT
+  cat > "${STUB_DIR}/gh" <<'STUB'
+#!/usr/bin/env bash
+echo "$@" >> "${GH_CALLS_FILE}"
+exit "${STUB_GH_EXIT:-0}"
+STUB
+  chmod +x "${STUB_DIR}/gh"
+  export GH_CALLS_FILE="${BATS_TEST_TMPDIR}/gh-calls"
+  export STUB_GH_EXIT=0
+
+  # Ensure no real cosign/gh interferes
   export PATH="${STUB_DIR}:${PATH}"
 }
 
@@ -38,43 +56,107 @@ teardown() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"skip"* ]]
   [ ! -f "${COSIGN_CALLS_FILE}" ]
+  [ ! -f "${GH_CALLS_FILE}" ]
 }
 
 # --- cosign not found ---
 
 @test "cosign missing + trevor-vaughan image = hard fail" {
-  export PATH="/usr/bin:/bin"  # no stub cosign
+  export PATH="/usr/bin:/bin"  # no stub cosign or gh
   run bash "${VERIFY}" "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
   [ "$status" -eq 1 ]
   [[ "$output" == *"cosign"* ]]
 }
 
 @test "cosign missing + third-party image = warn and pass" {
-  export PATH="/usr/bin:/bin"  # no stub cosign
+  export PATH="/usr/bin:/bin"  # no stub cosign or gh
   run bash "${VERIFY}" "ghcr.io/oxsecurity/megalinter:v9"
   [ "$status" -eq 0 ]
   [[ "$output" == *"cosign"* ]]
 }
 
-# --- cosign available, all pass ---
+# --- cosign + gh available, all pass ---
 
-@test "all 4 attestations pass for trevor-vaughan image" {
+@test "all attestations pass for trevor-vaughan image (cosign + gh)" {
   run bash "${VERIFY}" "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
   [ "$status" -eq 0 ]
-  # Should have called cosign 4 times (one per attestation type)
-  [ "$(wc -l < "${COSIGN_CALLS_FILE}")" -eq 4 ]
+  # 3 cosign calls (2 hard-fail: vuln + repo scan, 1 warn-only: SBOM)
+  [ "$(wc -l < "${COSIGN_CALLS_FILE}")" -eq 3 ]
+  # 1 gh call (SLSA provenance)
+  [ "$(wc -l < "${GH_CALLS_FILE}")" -eq 1 ]
 }
 
-# --- cosign available, one fails ---
+# --- cosign available, gh missing — SLSA skipped gracefully ---
+
+@test "gh missing = SLSA provenance skipped, cosign attestations still checked" {
+  # Remove gh stub; restrict PATH so no gh is found anywhere
+  rm "${STUB_DIR}/gh"
+  local SAFE_DIR="${BATS_TEST_TMPDIR}/safe-bin"
+  mkdir -p "${SAFE_DIR}"
+  for cmd in bash env wc cat; do
+    ln -sf "$(command -v "${cmd}")" "${SAFE_DIR}/${cmd}"
+  done
+  # Use env to set PATH only for the subshell (avoids leaking into teardown)
+  run env PATH="${STUB_DIR}:${SAFE_DIR}" bash "${VERIFY}" "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
+  [ "$status" -eq 0 ]
+  # 3 cosign calls still happen (2 hard-fail + 1 warn-only)
+  [ "$(wc -l < "${COSIGN_CALLS_FILE}")" -eq 3 ]
+  # SLSA skipped, not failed
+  [[ "$output" == *"SKIP"*"SLSA"* ]]
+  [[ "$output" != *"FAIL"*"SLSA"* ]]
+}
+
+# --- cosign available, all cosign calls fail ---
 
 @test "attestation failure + trevor-vaughan image = hard fail" {
   export STUB_COSIGN_EXIT=1
   run bash "${VERIFY}" "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
   [ "$status" -eq 1 ]
+  # SBOM should WARN (not FAIL) even when cosign fails — check per-line
+  echo "$output" | grep -q "WARN.*SBOM"
+  ! echo "$output" | grep -q "FAIL.*SBOM"
 }
 
 @test "attestation failure + third-party image = warn and pass" {
   export STUB_COSIGN_EXIT=1
+  run bash "${VERIFY}" "ghcr.io/oxsecurity/megalinter:v9"
+  [ "$status" -eq 0 ]
+}
+
+# --- SBOM warn-only does not block verification ---
+
+@test "SBOM failure alone does not block verification" {
+  # Use a smarter cosign stub that fails only for SBOM predicate type
+  cat > "${STUB_DIR}/cosign" <<'STUB'
+#!/usr/bin/env bash
+echo "$@" >> "${COSIGN_CALLS_FILE}"
+# Fail if this call is for the SBOM predicate type
+for arg in "$@"; do
+  if [[ "${arg}" == *"spdx.dev"* ]]; then
+    exit 1
+  fi
+done
+exit 0
+STUB
+  chmod +x "${STUB_DIR}/cosign"
+  run bash "${VERIFY}" "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARN"*"SBOM"* ]]
+  [[ "$output" == *"PASS"*"Vulnerability scan"* ]]
+  [[ "$output" == *"PASS"*"Repository scan"* ]]
+}
+
+# --- gh attestation verify failure ---
+
+@test "gh attestation failure + trevor-vaughan image = hard fail" {
+  export STUB_GH_EXIT=1
+  run bash "${VERIFY}" "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"FAIL"*"SLSA"* ]]
+}
+
+@test "gh attestation failure + third-party image = warn and pass" {
+  export STUB_GH_EXIT=1
   run bash "${VERIFY}" "ghcr.io/oxsecurity/megalinter:v9"
   [ "$status" -eq 0 ]
 }
