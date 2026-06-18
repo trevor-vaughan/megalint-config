@@ -19,6 +19,8 @@
 IGNORE_GITIGNORED_FILES: true
 PRINT_ALPACA: false
 SARIF_REPORTER: true
+MARKDOWN_SUMMARY_REPORTER: true
+GITHUB_COMMENT_REPORTER: false
 
 # Auto-fixing: Set APPLY_FIXES=all when running locally to enable auto-fixes
 # for linters that support it. Not all linters can auto-fix:

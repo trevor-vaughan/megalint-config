@@ -48,6 +48,13 @@ inputs:
       Set to empty string to disable caching.
     required: false
     default: "~/.cache/megalint/vuln-db"
+  github-comment:
+    description: >-
+      Post a summary comment on the pull request with lint results.
+      Requires pull-requests: write permission. Opt-in because
+      external callers may not grant that permission.
+    required: false
+    default: "false"
 
 outputs:
   reports-dir:
@@ -98,6 +105,7 @@ runs:
         INPUT_VALIDATE_ALL: ${{ inputs.validate-all-codebase }}
         INPUT_VULN_CACHE: ${{ inputs.vuln-cache-dir }}
         INPUT_VERIFY: ${{ inputs.verify }}
+        GITHUB_COMMENT_REPORTER: ${{ inputs.github-comment }}
       run: |
         set -euo pipefail
         # Expand ~ since env vars from inputs are literal strings
@@ -149,3 +157,15 @@ runs:
         target="${RESOLVE_REPORTS}"
         echo "reports-dir=${target}" >> "$GITHUB_OUTPUT"
         echo "sarif-file=${target}/megalinter-report.sarif" >> "$GITHUB_OUTPUT"
+
+    - name: Write job summary
+      if: ${{ always() }}
+      shell: bash
+      env:
+        RESOLVE_REPORTS: ${{ steps.resolve.outputs.reports }}
+      run: |
+        set -euo pipefail
+        report="${RESOLVE_REPORTS}/megalinter-report.md"
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -f "${report}" ]; then
+          cat "${report}" >> "$GITHUB_STEP_SUMMARY"
+        fi
