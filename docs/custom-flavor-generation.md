@@ -355,6 +355,21 @@ sudo usermod -aG docker $USER
 systemctl --user start podman.socket
 ```
 
+**Error: "failed to authorize ... 400/429" from `auth.docker.io` during build**
+
+The generated Dockerfile pulls several linter builder stages from Docker
+Hub. On shared CI runner IPs, Docker Hub throttles anonymous pulls and the
+build fails resolving an image (commonly `mvdan/shfmt`). Mitigations applied
+in this repo's workflows:
+
+- Stages whose images are published to GHCR (`hadolint`, `gitleaks`) are
+  rewritten to `ghcr.io` automatically by `_qualify_from_image`.
+- The remaining Docker Hub stages (`shfmt`, `shellcheck`, `kics`, and the
+  official `rust`/`alpine` images) are pulled authenticated when the
+  optional `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repository secrets are
+  set. The login step is skipped when they are absent (e.g. fork PRs), so
+  builds still run — just against the throttled anonymous quota.
+
 ### Debug Mode
 
 Run validation with manual inspection:

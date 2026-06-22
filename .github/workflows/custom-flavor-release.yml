@@ -37,6 +37,9 @@ jobs:
       # tasks in this job must also use docker.  ubuntu-latest ships
       # podman, which Task would otherwise auto-select.
       CONTAINER_ENGINE: docker
+      # Exposed as env so the Docker Hub login step's `if:` can detect
+      # whether the secret is set, degrading gracefully when it is absent.
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -190,6 +193,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
+      # The shfmt/shellcheck/kics/rust/alpine builder stages still pull
+      # from Docker Hub; authenticate to avoid anonymous-pull throttling.
+      # Skipped when the secret is absent so unattended releases without
+      # Docker Hub credentials degrade to anonymous pulls instead of failing.
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build image for testing
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
         with:
@@ -304,10 +318,13 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
+      # SBOM generation is a release gate: megalint-verify.sh hard-fails
+      # consumers without an SBOM attestation, so a failed generation
+      # (or attestation, below) must fail the job and trigger untag
+      # rather than publish an image consumers will reject.
       - name: Generate SBOM
         id: sbom
         if: github.event_name != 'pull_request'
-        continue-on-error: true
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           image: ghcr.io/${{ github.repository_owner }}/megalinter-custom-flavor@${{ steps.build.outputs.digest }}
@@ -346,8 +363,7 @@ jobs:
 
       - name: Attest SBOM
         id: attest-sbom
-        if: github.event_name != 'pull_request' && steps.sbom.outcome == 'success'
-        continue-on-error: true
+        if: github.event_name != 'pull_request'
         env:
           COSIGN_EXPERIMENTAL: "1"
           REPO_OWNER: ${{ github.repository_owner }}
@@ -358,9 +374,12 @@ jobs:
             --signing-config cosign-signing-config.json \
             "ghcr.io/${REPO_OWNER}/megalinter-custom-flavor@${IMAGE_DIGEST}"
 
+      # vuln + repo-scan attestations are release gates too (no
+      # continue-on-error): a failure fails the job so the untag step
+      # below removes the already-pushed image and no release is cut.
       - name: Attest image vulnerability scan
+        id: attest-vuln
         if: github.event_name != 'pull_request'
-        continue-on-error: true
         env:
           COSIGN_EXPERIMENTAL: "1"
           REPO_OWNER: ${{ github.repository_owner }}
@@ -373,8 +392,8 @@ jobs:
             "ghcr.io/${REPO_OWNER}/megalinter-custom-flavor@${IMAGE_DIGEST}"
 
       - name: Attest repository scan
+        id: attest-repo-scan
         if: github.event_name != 'pull_request'
-        continue-on-error: true
         env:
           COSIGN_EXPERIMENTAL: "1"
           REPO_OWNER: ${{ github.repository_owner }}
@@ -386,6 +405,41 @@ jobs:
             --predicate "${SARIF_FILE}" \
             --signing-config cosign-signing-config.json \
             "ghcr.io/${REPO_OWNER}/megalinter-custom-flavor@${IMAGE_DIGEST}"
+
+      # Fail closed: if any step after the image was pushed fails
+      # (provenance, a gating attestation, etc.), delete the just-pushed
+      # manifest so no consumable tag — including a moved :latest —
+      # points at an unattested image.  GITHUB_TOKEN can delete versions
+      # of packages this repo published (it holds package-admin by
+      # default), so no PAT is required.  Deleting the index-manifest
+      # version removes every tag that resolves to it.  This step is
+      # best-effort cleanup and never masks the original failure.
+      - name: Untag unattested image on failure
+        if: failure() && steps.build.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE: megalinter-custom-flavor
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          echo "Publish/attestation failed — removing unattested image ${IMAGE_DIGEST}"
+          version_id="$(gh api --paginate \
+            "/users/${OWNER}/packages/container/${PACKAGE}/versions" \
+            --jq "[.[] | select(.name == \"${IMAGE_DIGEST}\")][0].id // empty")"
+          if [ -z "${version_id}" ]; then
+            echo "WARNING: no package version found for digest ${IMAGE_DIGEST}; manual cleanup may be required" >&2
+            exit 0
+          fi
+          # GHCR refuses to delete the last remaining tagged version of a
+          # package; tolerate any delete error rather than masking the
+          # build failure that triggered this cleanup.
+          if gh api --method DELETE \
+            "/users/${OWNER}/packages/container/${PACKAGE}/versions/${version_id}"; then
+            echo "Deleted unattested image version ${version_id} (${IMAGE_DIGEST})"
+          else
+            echo "WARNING: could not delete version ${version_id} (${IMAGE_DIGEST}); manual cleanup may be required" >&2
+          fi
 
       - name: Create GitHub release
         if: steps.identity.outputs.create_release == 'true'
@@ -399,7 +453,6 @@ jobs:
           BASE_IMAGE_REF: ${{ steps.upstream.outputs.base_image }}
           REPO_OWNER: ${{ github.repository_owner }}
           COMMIT_SHA: ${{ github.sha }}
-          SBOM_OK: ${{ steps.attest-sbom.outcome == 'success' }}
         run: |
           set -euo pipefail
           IMAGE="ghcr.io/${REPO_OWNER}/megalinter-custom-flavor"
@@ -410,13 +463,6 @@ jobs:
           LATEST_LINE=""
           if [ "${MOVE_LATEST}" = "true" ]; then
             LATEST_LINE="- \`${IMAGE}:latest\` (moved to this release)"
-          fi
-          SBOM_LABEL=""
-          SBOM_NOTE=""
-          if [ "${SBOM_OK}" = "true" ]; then
-            SBOM_LABEL=" + SBOM"
-          else
-            SBOM_NOTE=" (SBOM attestation failed; SBOM available as build artifact)"
           fi
           cat <<EOF | gh release create "${RELEASE_TAG}" ${PRERELEASE_FLAG} \
             --title "Custom Flavor ${RELEASE_TAG} (${COMPOSITE})" \
@@ -436,7 +482,7 @@ jobs:
           freshest build and is not stable.
 
           ### Details
-          - Supply chain attestation: SLSA provenance${SBOM_LABEL} + vulnerability scan + repo scan${SBOM_NOTE}
+          - Supply chain attestation: SLSA provenance + SBOM + vulnerability scan + repo scan
           - Multi-platform: linux/amd64, linux/arm64
 
           **Commit:** ${COMMIT_SHA}

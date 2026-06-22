@@ -362,13 +362,29 @@ def _dedup_from_stages(
     return result
 
 
-def _qualify_from_image(line: str) -> str:
-    """Qualify short Docker Hub image names with docker.io/.
+# Builder-stage images that publish to GHCR, keyed by their
+# Docker Hub repository name.  Pulling these from GHCR avoids
+# Docker Hub's anonymous-pull rate limiting, which returns
+# sporadic 400/429 errors on shared CI runner IPs.  gitleaks
+# lives under a different org on GHCR than on Docker Hub.
+# Images absent here (shfmt, shellcheck, kics, and the
+# official rust/alpine images) are not published to GHCR and
+# stay on docker.io.
+GHCR_IMAGE_REMAP = {
+    "hadolint/hadolint": "ghcr.io/hadolint/hadolint",
+    "zricethezav/gitleaks": "ghcr.io/gitleaks/gitleaks",
+}
 
-    Podman prompts for registry selection when a FROM image
-    lacks a domain component.  Prefixing Docker Hub short
-    names (e.g. ``alpine:3``, ``user/repo:tag``) with
-    ``docker.io/`` makes the reference unambiguous.
+
+def _qualify_from_image(line: str) -> str:
+    """Qualify a FROM image reference with an explicit registry.
+
+    Images known to publish to GHCR (see
+    :data:`GHCR_IMAGE_REMAP`) are rewritten to their GHCR
+    location to dodge Docker Hub's anonymous-pull throttling.
+    Every other short Docker Hub name (e.g. ``alpine:3``,
+    ``user/repo:tag``) is prefixed with ``docker.io/`` so
+    podman does not prompt for registry selection.
 
     Images that already contain a registry domain (contain a
     ``.`` before the first ``/``) or use a ``${}`` variable
@@ -380,13 +396,17 @@ def _qualify_from_image(line: str) -> str:
     if not match:
         return line
     prefix, image, rest = match.groups()
-    # Strip tag/digest for domain check
+    # Strip tag/digest to isolate the repository name
     name = image.split(":")[0].split("@")[0]
-    # Already fully qualified (contains a dot before /)
-    if "/" in name and "." in name.split("/")[0]:
-        return line
     # Pure variable reference — leave as-is
     if name.startswith("${"):
+        return line
+    # Remap images that publish to GHCR, preserving tag/digest
+    if name in GHCR_IMAGE_REMAP:
+        remapped = GHCR_IMAGE_REMAP[name] + image[len(name):]
+        return f"{prefix}{remapped}{rest}"
+    # Already fully qualified (contains a dot before /)
+    if "/" in name and "." in name.split("/")[0]:
         return line
     return f"{prefix}docker.io/{image}{rest}"
 

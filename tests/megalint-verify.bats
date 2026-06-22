@@ -2,9 +2,11 @@
 # Tests for .taskfiles/scripts/megalint-verify.sh
 #
 # The verify script uses a mixed verification strategy:
-#   - cosign verify-attestation for vuln scan + repo scan (hard-fail, 2 calls)
-#   - cosign verify-attestation for SBOM (warn-only, 1 call) — see FIXME in script
+#   - cosign verify-attestation for vuln scan + repo scan + SBOM (hard-fail, 3 calls)
 #   - gh attestation verify for SLSA provenance (1 call)
+# The release pipeline signs cosign attestations without a Rekor tlog entry
+# (TSA timestamp only), so every verify-attestation call must pass
+# --insecure-ignore-tlog=true --use-signed-timestamps.
 # Tests stub both tools to validate all code paths.
 
 setup() {
@@ -112,9 +114,10 @@ teardown() {
   export STUB_COSIGN_EXIT=1
   run bash "${VERIFY}" "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
   [ "$status" -eq 1 ]
-  # SBOM should WARN (not FAIL) even when cosign fails — check per-line
-  echo "$output" | grep -q "WARN.*SBOM"
-  ! echo "$output" | grep -q "FAIL.*SBOM"
+  # All three cosign attestations now hard-fail (vuln, repo scan, SBOM)
+  echo "$output" | grep -q "FAIL.*Vulnerability scan"
+  echo "$output" | grep -q "FAIL.*Repository scan"
+  echo "$output" | grep -q "FAIL.*SBOM"
 }
 
 @test "attestation failure + third-party image = warn and pass" {
@@ -123,9 +126,9 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-# --- SBOM warn-only does not block verification ---
+# --- SBOM is hard-fail (no longer warn-only) ---
 
-@test "SBOM failure alone does not block verification" {
+@test "SBOM failure blocks verification for trevor-vaughan image" {
   # Use a smarter cosign stub that fails only for SBOM predicate type
   cat > "${STUB_DIR}/cosign" <<'STUB'
 #!/usr/bin/env bash
@@ -140,10 +143,30 @@ exit 0
 STUB
   chmod +x "${STUB_DIR}/cosign"
   run bash "${VERIFY}" "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"WARN"*"SBOM"* ]]
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"FAIL"*"SBOM"* ]]
   [[ "$output" == *"PASS"*"Vulnerability scan"* ]]
   [[ "$output" == *"PASS"*"Repository scan"* ]]
+}
+
+# --- cosign verify flags match the no-Rekor (TSA-only) signing config ---
+
+@test "every cosign verify-attestation call ignores tlog and uses signed timestamps" {
+  run bash "${VERIFY}" "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
+  [ "$status" -eq 0 ]
+  [ -f "${COSIGN_CALLS_FILE}" ]
+  # Every recorded cosign call must carry both flags — otherwise keyless
+  # leaf-certificate verification fails against TSA-timestamped attestations.
+  while IFS= read -r line; do
+    [[ "${line}" == *"--insecure-ignore-tlog=true"* ]] || {
+      echo "missing --insecure-ignore-tlog in: ${line}"
+      return 1
+    }
+    [[ "${line}" == *"--use-signed-timestamps"* ]] || {
+      echo "missing --use-signed-timestamps in: ${line}"
+      return 1
+    }
+  done < "${COSIGN_CALLS_FILE}"
 }
 
 # --- gh attestation verify failure ---
