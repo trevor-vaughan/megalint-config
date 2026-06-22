@@ -78,10 +78,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: custom-flavor-validation-${{ github.sha }}-${{ github.run_attempt }}
+          # Name is stable across run attempts so a "re-run failed jobs" of
+          # test-docker-build (which only bumps that job's run_attempt) can still
+          # find this producer's artifact. overwrite lets a full re-run replace
+          # the prior attempt's upload instead of erroring on a name collision.
+          name: custom-flavor-validation-${{ github.sha }}
           path: ./custom-flavor/
           retention-days: 7
           if-no-files-found: error
+          overwrite: true
 
   test-docker-build:
     name: Test Docker Build
@@ -95,6 +100,10 @@ jobs:
       # (including Taskfile tasks) must use the same engine.
       # ubuntu-latest ships podman, which Task would otherwise auto-select.
       CONTAINER_ENGINE: docker
+      # Exposed as env so the login step's `if:` can detect whether the
+      # secret is set. Absent on fork PRs (secrets are withheld there),
+      # where the build degrades to anonymous Docker Hub pulls.
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -112,10 +121,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
+      # shfmt, shellcheck, kics, and the official rust/alpine builder
+      # stages are pulled from Docker Hub, whose anonymous-pull limit on
+      # shared runner IPs returns sporadic 400/429 errors. Authenticating
+      # moves these pulls to a per-account quota. Skipped when the secret
+      # is absent (e.g. fork PRs) so the build still runs, just unauthenticated.
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Download flavor artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: custom-flavor-validation-${{ github.sha }}-${{ github.run_attempt }}
+          name: custom-flavor-validation-${{ github.sha }}
           path: ./custom-flavor
 
       - name: Validate artifact contents

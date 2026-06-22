@@ -64,6 +64,9 @@ build_flavor = (
 _inject_sarif_fmt = (
     build_flavor_dockerfile._inject_sarif_fmt  # noqa: SLF001 — test exercises private helper
 )
+_qualify_from_image = (
+    build_flavor_dockerfile._qualify_from_image  # noqa: SLF001 — test exercises private helper
+)
 SARIF_FMT_VERSION = (
     build_flavor_dockerfile.SARIF_FMT_VERSION
 )
@@ -995,3 +998,56 @@ class TestDockerfileHardening:
         assert "wget" not in result
         assert "curl" in result
         assert "https://example.com/install.sh" in result
+
+
+class TestQualifyFromImage:
+    """Tests for _qualify_from_image registry handling.
+
+    Builder-stage images that publish to GHCR are remapped
+    there to avoid Docker Hub's anonymous-pull rate limiting
+    on shared CI runner IPs; everything else is qualified
+    with docker.io/ so podman does not prompt for a registry.
+    """
+
+    def test_hadolint_remapped_to_ghcr(self):
+        line = (
+            "FROM hadolint/hadolint:v2.14.0-alpine"
+            " AS hadolint"
+        )
+        assert _qualify_from_image(line) == (
+            "FROM ghcr.io/hadolint/hadolint:v2.14.0-alpine"
+            " AS hadolint"
+        )
+
+    def test_gitleaks_remapped_to_ghcr_org(self):
+        # Docker Hub publishes gitleaks under zricethezav/,
+        # but GHCR hosts it under gitleaks/.
+        line = (
+            "FROM zricethezav/gitleaks:v8.30.1 AS gitleaks"
+        )
+        assert _qualify_from_image(line) == (
+            "FROM ghcr.io/gitleaks/gitleaks:v8.30.1"
+            " AS gitleaks"
+        )
+
+    def test_shfmt_stays_on_docker_hub(self):
+        # Not published to GHCR — must remain on docker.io.
+        line = "FROM mvdan/shfmt:${BASH_SHFMT_VERSION} AS shfmt"
+        assert _qualify_from_image(line) == (
+            "FROM docker.io/mvdan/shfmt:"
+            "${BASH_SHFMT_VERSION} AS shfmt"
+        )
+
+    def test_official_image_qualified_to_docker_hub(self):
+        line = "FROM rust:1-alpine AS sarif-fmt-builder"
+        assert _qualify_from_image(line) == (
+            "FROM docker.io/rust:1-alpine AS sarif-fmt-builder"
+        )
+
+    def test_already_qualified_ghcr_unchanged(self):
+        line = "FROM ghcr.io/oxsecurity/megalinter:v9"
+        assert _qualify_from_image(line) == line
+
+    def test_pure_variable_reference_unchanged(self):
+        line = "FROM ${BASE_IMAGE} AS base"
+        assert _qualify_from_image(line) == line

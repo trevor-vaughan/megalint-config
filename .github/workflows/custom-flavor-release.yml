@@ -37,6 +37,9 @@ jobs:
       # tasks in this job must also use docker.  ubuntu-latest ships
       # podman, which Task would otherwise auto-select.
       CONTAINER_ENGINE: docker
+      # Exposed as env so the Docker Hub login step's `if:` can detect
+      # whether the secret is set, degrading gracefully when it is absent.
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -189,6 +192,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
+
+      # The shfmt/shellcheck/kics/rust/alpine builder stages still pull
+      # from Docker Hub; authenticate to avoid anonymous-pull throttling.
+      # Skipped when the secret is absent so unattended releases without
+      # Docker Hub credentials degrade to anonymous pulls instead of failing.
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build image for testing
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
