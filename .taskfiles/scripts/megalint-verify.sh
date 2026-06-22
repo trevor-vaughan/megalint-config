@@ -66,9 +66,12 @@ command -v cosign >/dev/null 2>&1 && has_cosign=true
 command -v gh >/dev/null 2>&1 && has_gh=true
 
 if [[ "${has_cosign}" == "false" ]]; then
-	is_strict
-	strict=$?
-	if [[ ${strict} -eq 0 ]]; then
+	# is_strict must be used directly as an if-condition: as a bare
+	# statement under `set -e`, a non-strict (return 1) result would
+	# abort the script before the warn branch could run.
+	# shellcheck disable=SC2310  # is_strict is a pure [[ ]] test; the
+	# set -e suppression SC2310 warns about cannot mask any failure.
+	if is_strict; then
 		echo "ERROR: cosign is not installed but is required to verify ${IMAGE}" >&2
 		echo "Install cosign: https://docs.sigstore.dev/cosign/system_config/installation/" >&2
 		gh_endgroup
@@ -82,22 +85,11 @@ fi
 
 # ── Cosign-verified attestation types ───────────────────────────────
 # These are attested via `cosign attest` in the release pipeline,
-# which writes OCI attestations to the container registry.
-# All three use a signing config without Rekor tlog URLs because
-# payloads regularly exceed Rekor's 16 MiB entry limit.
-
-# Attestations that hard-fail verification when missing.
+# which writes OCI attestations to the container registry.  All three
+# hard-fail verification when missing or unverifiable.
 declare -A COSIGN_ATTESTATIONS=(
 	["Vulnerability scan"]="https://cosign.sigstore.dev/attestation/vuln/v1"
 	["Repository scan"]="https://megalinter.io/attestation/repo-scan/v1"
-)
-
-# FIXME: SBOM verification is warn-only until the first release with  # DevSkim: ignore DS176209
-# the --signing-config fix lands (cosign --tlog-upload=false broke in
-# cosign >=2.5).  Once a release succeeds with the fixed attestation
-# pipeline, move SBOM back into COSIGN_ATTESTATIONS above and remove
-# this block.
-declare -A COSIGN_ATTESTATIONS_WARN=(
 	["SBOM (SPDX)"]="https://spdx.dev/Document"
 )
 
@@ -105,10 +97,20 @@ readonly CERT_IDENTITY_RE='https://github.com/trevor-vaughan/megalint-config/.*'
 readonly CERT_OIDC_ISSUER='https://token.actions.githubusercontent.com'
 
 # ── Verify cosign attestations (hard-fail) ──────────────────────────
+# The release pipeline signs these without a Rekor transparency-log
+# entry — it strips rekorTlogUrls from the signing config because
+# SBOM/SARIF payloads exceed Rekor's 16 MiB entry limit — and relies on
+# the Sigstore TSA for timestamping instead.  Verification must
+# therefore ignore the tlog (--insecure-ignore-tlog) and consume the
+# signed timestamp (--use-signed-timestamps); without the timestamp the
+# short-lived keyless leaf certificate cannot be validated and every
+# attestation fails with "leaf certificate verification failed".
 failures=0
 for name in "${!COSIGN_ATTESTATIONS[@]}"; do
 	predicate="${COSIGN_ATTESTATIONS[$name]}"
 	if cosign verify-attestation \
+		--insecure-ignore-tlog=true \
+		--use-signed-timestamps \
 		--certificate-identity-regexp="${CERT_IDENTITY_RE}" \
 		--certificate-oidc-issuer="${CERT_OIDC_ISSUER}" \
 		--type="${predicate}" \
@@ -117,20 +119,6 @@ for name in "${!COSIGN_ATTESTATIONS[@]}"; do
 	else
 		echo "  FAIL  ${name} (${predicate})"
 		failures=$((failures + 1))
-	fi
-done
-
-# ── Verify cosign attestations (warn-only) ──────────────────────────
-for name in "${!COSIGN_ATTESTATIONS_WARN[@]}"; do
-	predicate="${COSIGN_ATTESTATIONS_WARN[$name]}"
-	if cosign verify-attestation \
-		--certificate-identity-regexp="${CERT_IDENTITY_RE}" \
-		--certificate-oidc-issuer="${CERT_OIDC_ISSUER}" \
-		--type="${predicate}" \
-		"${IMAGE}" >/dev/null 2>&1; then
-		echo "  PASS  ${name}"
-	else
-		echo "  WARN  ${name} (${predicate}) — attestation missing or unverifiable"
 	fi
 done
 
@@ -168,9 +156,9 @@ fi
 
 # ── Report result ───────────────────────────────────────────────────
 if [[ ${failures} -gt 0 ]]; then
-	is_strict
-	strict=$?
-	if [[ ${strict} -eq 0 ]]; then
+	# shellcheck disable=SC2310  # is_strict is a pure [[ ]] test; the
+	# set -e suppression SC2310 warns about cannot mask any failure.
+	if is_strict; then
 		echo "ERROR: ${failures} attestation(s) failed verification for ${IMAGE}" >&2
 		gh_endgroup
 		exit 1
