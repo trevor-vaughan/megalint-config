@@ -99,11 +99,10 @@ task flavor:test
 
 #### `flavor:build`
 
-| Variable     | Default                 | Description                       |
-|--------------|-------------------------|-----------------------------------|
-| `FLAVOR_DIR` | `./custom-flavor`       | Directory containing flavor files |
-| `IMAGE_NAME` | `megalinter-local`      | Docker image name                 |
-| `IMAGE_TAG`  | `v<MEGALINTER_VERSION>` | Docker image tag                  |
+| Variable           | Default                          | Description                       |
+|--------------------|----------------------------------|-----------------------------------|
+| `FLAVOR_DIR`       | `./custom-flavor`                | Directory containing flavor files |
+| `MEGALINTER_IMAGE` | `megalinter-local:v<MEGALINTER_VERSION>` | Full image reference (name:tag) to build |
 
 ## Configuration
 
@@ -176,12 +175,11 @@ docker run --rm \
 
 ### Custom Image Names
 
-Use specific image names and tags:
+Use a specific image reference:
 
 ```bash
 task flavor:build \
-  IMAGE_NAME=myorg/mylinter \
-  IMAGE_TAG=v1.0.0
+  MEGALINTER_IMAGE=myorg/mylinter:v1.0.0
 ```
 
 ### Registry Publishing
@@ -270,8 +268,7 @@ task flavor:validate \
 
 task flavor:build \
   FLAVOR_DIR=./linters/fullstack \
-  IMAGE_NAME=myorg/fullstack-linter \
-  IMAGE_TAG=v2.0.0
+  MEGALINTER_IMAGE=myorg/fullstack-linter:v2.0.0
 ```
 
 ### Organization-Wide Standard
@@ -293,8 +290,7 @@ task flavor:validate \
 # Build for registry
 task flavor:build \
   FLAVOR_DIR=./dist/enterprise-linter \
-  IMAGE_NAME=enterprise.registry.com/megalinter \
-  IMAGE_TAG=2024.1.0
+  MEGALINTER_IMAGE=enterprise.registry.com/megalinter:2024.1.0
 ```
 
 ## Troubleshooting
@@ -461,8 +457,7 @@ jobs:
       - name: Build and push
         run: |
           task flavor:build \
-            IMAGE_NAME=ghcr.io/${{ github.repository }}/megalinter \
-            IMAGE_TAG=${{ github.sha }}
+            MEGALINTER_IMAGE=ghcr.io/${{ github.repository }}/megalinter:${{ github.sha }}
           docker push ghcr.io/${{ github.repository }}/megalinter:${{ github.sha }}
 ```
 

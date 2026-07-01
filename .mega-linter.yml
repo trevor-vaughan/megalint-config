@@ -93,7 +93,7 @@ ENABLE_LINTERS:
   - REPOSITORY_DEVSKIM # Security pattern detection
   - REPOSITORY_GRYPE # Vulnerability scanning
   - REPOSITORY_KICS # Infrastructure security analysis
-  - REPOSITORY_GITLEAKS # Secrets detection
+  - REPOSITORY_BETTERLEAKS # Secrets detection (gitleaks successor; reads .gitleaks.toml)
   - REPOSITORY_SECRETLINT # Secrets detection
   - REPOSITORY_TRIVY # Container/dependency security
   - REPOSITORY_TRUFFLEHOG # Additional secrets detection
@@ -117,6 +117,9 @@ DISABLE_LINTERS:
 
   # Security - high false positive rate
   - PYTHON_BANDIT # 94 false positive assert warnings in test files
+
+  # Secrets - superseded by betterleaks (same author, drop-in, reads .gitleaks.toml)
+  - REPOSITORY_GITLEAKS # Replaced by REPOSITORY_BETTERLEAKS (MegaLinter 9.6.0)
 
   # Other
   - REPOSITORY_KINGFISHER # Redundant with other security tools
@@ -169,6 +172,15 @@ REPOSITORY_CHECKOV_CONFIG_FILE: .checkov.yml
 # DevSkim: Rule and path exclusions are in .devskim.json. In this repo it
 # lives in .mega-linter.d/ and is overlaid at the workspace root by the runner.
 REPOSITORY_DEVSKIM_CONFIG_FILE: .devskim.json
+
+# Betterleaks: Secrets scanner that replaced REPOSITORY_GITLEAKS in 9.6.0.
+# It is backward compatible with the gitleaks config format, so it reuses the
+# existing .gitleaks.toml (extend useDefault + allowlist for .cache/ and
+# custom-flavor/) rather than duplicating it into a .betterleaks.toml. The
+# runner overlays .mega-linter.d/.gitleaks.toml at the workspace root for repos
+# that do not ship their own. Pointed explicitly so the allowlist is never
+# silently dropped (which would flag generated artifacts as leaks).
+REPOSITORY_BETTERLEAKS_CONFIG_FILE: .gitleaks.toml
 
 # Secretlint: Path exclusions are in .secretlintignore (project root).
 # REPOSITORY_SECRETLINT_ARGUMENTS is not used; secretlint reads .secretlintignore.

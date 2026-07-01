@@ -1,7 +1,11 @@
 version: "3"
 
+# MEGALINTER_IMAGE (full image reference) defaults per-task, not here: Task
+# merges every include's top-level vars into one shared map, so a top-level
+# default would globally clobber flavor.yml's different default (last include
+# wins). The default below is duplicated across pull/verify/run so each is
+# correct when invoked standalone; a CLI override still wins everywhere.
 vars:
-  MEGALINTER_IMAGE: '{{.MEGALINTER_IMAGE | default "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"}}'
   TARGET: "{{.TARGET | default .ROOT_DIR}}"
   APPLY_FIXES: '{{.APPLY_FIXES | default "none"}}'
   PULL_POLICY: '{{.PULL_POLICY | default "never"}}'
@@ -17,6 +21,7 @@ tasks:
     prompt: The megalinter image is large (~3 GB). Do you want to continue?
     vars:
       FORCE: '{{.FORCE | default ""}}'
+      MEGALINTER_IMAGE: '{{.MEGALINTER_IMAGE | default "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"}}'
     status:
       - test -z "{{.FORCE}}" && {{.CONTAINER_ENGINE}} image inspect {{.MEGALINTER_IMAGE}} >/dev/null 2>&1
     cmds:
@@ -25,6 +30,8 @@ tasks:
   verify:
     desc: "Verify attestations on the pulled MegaLinter image using cosign"
     deps: [pull]
+    vars:
+      MEGALINTER_IMAGE: '{{.MEGALINTER_IMAGE | default "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"}}'
     env:
       MEGALINT_VERIFY: "{{.MEGALINT_VERIFY}}"
     cmd: bash "{{.TASKFILE_DIR}}/scripts/megalint-verify.sh" "{{.MEGALINTER_IMAGE}}"
@@ -33,6 +40,7 @@ tasks:
     desc: "Run MegaLinter against TARGET (default: this repo). APPLY_FIXES=all to auto-fix."
     deps: [verify]
     vars:
+      MEGALINTER_IMAGE: '{{.MEGALINTER_IMAGE | default "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"}}'
       VALIDATE_ALL_CODEBASE: '{{.VALIDATE_ALL_CODEBASE | default ""}}'
       CONFIG_FILE: '{{.CONFIG_FILE | default ""}}'
     # VALIDATE_ALL_CODEBASE is forwarded as an env var because the runner
