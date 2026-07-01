@@ -175,12 +175,12 @@ jobs:
 
       - name: Build Docker image
         env:
-          IMAGE_TAG: test-custom-flavor:${{ github.sha }}-${{ github.run_attempt }}
+          IMAGE_REF: test-custom-flavor:${{ github.sha }}-${{ github.run_attempt }}
           BUILD_REVISION: ${{ github.sha }}
           BUILD_CONTEXT: ${{ steps.context.outputs.context }}
         run: |
           docker build \
-            -t "${IMAGE_TAG}" \
+            -t "${IMAGE_REF}" \
             -f ./custom-flavor/Dockerfile \
             --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --build-arg BUILD_REVISION="${BUILD_REVISION}" \
@@ -190,18 +190,18 @@ jobs:
 
       - name: Smoke-test image
         env:
-          IMAGE_TAG: test-custom-flavor:${{ github.sha }}-${{ github.run_attempt }}
-        run: task flavor:smoke-test IMAGE_NAME="${IMAGE_TAG%%:*}" IMAGE_TAG="${IMAGE_TAG##*:}"
+          IMAGE_REF: test-custom-flavor:${{ github.sha }}-${{ github.run_attempt }}
+        run: task flavor:smoke-test MEGALINTER_IMAGE="${IMAGE_REF}"
 
       # Vulnerability scan is informational (exit-code: 0) because most
       # findings originate in the upstream MegaLinter base image and its
       # bundled language-specific packages, which we cannot patch.
       - name: Scan image for vulnerabilities
         env:
-          IMAGE_TAG: test-custom-flavor:${{ github.sha }}-${{ github.run_attempt }}
+          IMAGE_REF: test-custom-flavor:${{ github.sha }}-${{ github.run_attempt }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.IMAGE_TAG }}
+          image-ref: ${{ env.IMAGE_REF }}
           version: v0.70.0
           format: table
           severity: CRITICAL,HIGH
@@ -211,6 +211,6 @@ jobs:
       - name: Clean up Docker image
         if: always()
         env:
-          IMAGE_TAG: test-custom-flavor:${{ github.sha }}-${{ github.run_attempt }}
+          IMAGE_REF: test-custom-flavor:${{ github.sha }}-${{ github.run_attempt }}
         run: |
-          docker rmi "${IMAGE_TAG}" || true
+          docker rmi "${IMAGE_REF}" || true

@@ -9,7 +9,7 @@ name: Custom Flavor Release
   workflow_dispatch:
     inputs:
       base_image:
-        description: "Base MegaLinter image (e.g. ghcr.io/oxsecurity/megalinter:v9.5.0)"
+        description: "Base MegaLinter image (e.g. ghcr.io/oxsecurity/megalinter:v9.6.0)"
         required: false
         default: ""
         type: string
@@ -219,7 +219,7 @@ jobs:
             BUILD_VERSION=${{ steps.identity.outputs.composite || steps.upstream.outputs.upstream_version }}
 
       - name: Smoke-test image
-        run: task flavor:smoke-test IMAGE_NAME=megalinter-custom-flavor IMAGE_TAG=test
+        run: task flavor:smoke-test MEGALINTER_IMAGE=megalinter-custom-flavor:test
 
       # Vulnerability scans are informational (exit-code: 0) because
       # most findings originate in the upstream MegaLinter base image

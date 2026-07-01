@@ -2,6 +2,7 @@
   "threshold": 5,
   "reporters": ["console"],
   "ignore": [
+    "**/.git/**",
     "**/api/gen/**",
     "**/.build/**",
     "**/.claude/**",
