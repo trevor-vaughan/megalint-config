@@ -11,7 +11,7 @@ target repos don't vendor anything. The artifacts that matter:
 - `.mega-linter.yml` — the canonical linter profile. Changes here affect
   every target the runner is pointed at.
 - `.mega-linter.d/` — drop-in directory for shared sub-configs
-  (`.devskim.json`, `.jscpd.json`, `kics.config`, …). Anything here is
+  (`.devskim.json`, `.jscpd.json`, `.grype.yaml`, …). Anything here is
   auto-mounted at the target's workspace root.
 - `Taskfile.yml` + `.taskfiles/megalint.yml` — Taskfile entrypoint.
 - `.taskfiles/scripts/megalint-run.sh` — the runner. Two staging modes:
