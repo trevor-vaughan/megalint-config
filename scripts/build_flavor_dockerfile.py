@@ -367,9 +367,9 @@ def _dedup_from_stages(
 # Docker Hub's anonymous-pull rate limiting, which returns
 # sporadic 400/429 errors on shared CI runner IPs.  gitleaks
 # lives under a different org on GHCR than on Docker Hub.
-# Images absent here (shfmt, shellcheck, kics, and the
-# official rust/alpine images) are not published to GHCR and
-# stay on docker.io.
+# Images absent here (shfmt, shellcheck, and the official
+# rust/alpine images) are not published to GHCR and stay on
+# docker.io.
 GHCR_IMAGE_REMAP = {
     "hadolint/hadolint": "ghcr.io/hadolint/hadolint",
     "zricethezav/gitleaks": "ghcr.io/gitleaks/gitleaks",
@@ -769,9 +769,15 @@ def generate_dockerfile(
         encoding="utf-8",
     )
 
-    # Classify raw Dockerfile lines from descriptors
+    # Classify raw Dockerfile lines from descriptors.
+    # TARGETPLATFORM is prepended unconditionally: several linter
+    # install snippets (e.g. dotenv-linter) reference $TARGETPLATFORM
+    # in a shell case statement without declaring the ARG themselves -
+    # upstream relies on a single top-level declaration that isn't
+    # tied to any one linter's descriptor, so collect_installs() never
+    # sees it.
     classified = classify_dockerfile_lines(
-        installs["dockerfile"],
+        ["ARG TARGETPLATFORM", *installs["dockerfile"]],
     )
 
     # Build each section

@@ -6,6 +6,8 @@ on:
   pull_request:
     paths:
       - ".mega-linter.yml"
+      - ".mega-linter.local.yml"
+      - ".mega-linter.d/**"
       - ".taskfiles/flavor.yml"
       - ".github/workflows/custom-flavor-validate.yml"
       - ".github/workflows/custom-flavor-release.yml"
@@ -19,6 +21,8 @@ on:
       - "main"
     paths:
       - ".mega-linter.yml"
+      - ".mega-linter.local.yml"
+      - ".mega-linter.d/**"
       - ".taskfiles/flavor.yml"
       - ".github/workflows/custom-flavor-validate.yml"
       - ".github/workflows/custom-flavor-release.yml"
@@ -56,6 +60,14 @@ jobs:
 
       - name: Clone MegaLinter source
         run: task flavor:clone
+
+      # Descriptor-backed config validation: every enabled/disabled linter is
+      # a real MegaLinter key AND is installable by our slim flavor (its
+      # descriptor exists), and the changed-files override stays in sync with
+      # the base. Requires the clone above, so it runs here rather than in the
+      # clone-free unit gate (check.yml).
+      - name: Validate configuration sanity
+        run: task dev:test:config
 
       - name: Generate custom flavor
         run: task flavor:generate FLAVOR_NAME=test-flavor
@@ -121,7 +133,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
-      # shfmt, shellcheck, kics, and the official rust/alpine builder
+      # shfmt, shellcheck, and the official rust/alpine builder
       # stages are pulled from Docker Hub, whose anonymous-pull limit on
       # shared runner IPs returns sporadic 400/429 errors. Authenticating
       # moves these pulls to a per-account quota. Skipped when the secret

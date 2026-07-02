@@ -15,7 +15,14 @@ inputs:
     required: false
     default: ${{ github.workspace }}
   validate-all-codebase:
-    description: "Forwarded to MegaLinter as VALIDATE_ALL_CODEBASE."
+    description: >-
+      Selects the lint scope. Must be "true" or "false". "false" (default)
+      runs the changed-files task (megalint:changed): file-level linters diff
+      against the default branch and REPOSITORY_* linters (Checkov, TruffleHog,
+      Trivy, secret scanners) are skipped, since they scan the whole repo
+      regardless and add no incremental value on a changed-file run. "true"
+      runs the full task (megalint:run) with every enabled linter over the
+      entire codebase. Also forwarded to MegaLinter as VALIDATE_ALL_CODEBASE.
     required: false
     default: "false"
   megalinter-image:
@@ -56,6 +63,15 @@ inputs:
       external callers may not grant that permission.
     required: false
     default: "false"
+  timeout-minutes:
+    description: >-
+      Maximum wall-clock minutes for the MegaLinter run before it is
+      terminated. Guards against a hung linter consuming the whole job.
+      Composite-action steps cannot use the native timeout-minutes key,
+      so this is enforced with coreutils `timeout`. Must be a positive
+      integer.
+    required: false
+    default: "45"
 
 outputs:
   reports-dir:
@@ -107,17 +123,53 @@ runs:
         INPUT_VULN_CACHE: ${{ inputs.vuln-cache-dir }}
         INPUT_VERIFY: ${{ inputs.verify }}
         GITHUB_COMMENT_REPORTER: ${{ inputs.github-comment }}
+        INPUT_TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
       run: |
         set -euo pipefail
         # Expand ~ since env vars from inputs are literal strings
         vuln_cache="${INPUT_VULN_CACHE/#\~/$HOME}"
         export MEGALINT_VULN_CACHE="${vuln_cache}"
-        task -y megalint:run \
-          TARGET="${INPUT_WORKING_DIR}" \
-          MEGALINTER_IMAGE="${INPUT_MEGALINTER_IMAGE}" \
-          PULL_POLICY="${INPUT_PULL_POLICY}" \
-          VALIDATE_ALL_CODEBASE="${INPUT_VALIDATE_ALL}" \
-          MEGALINT_VERIFY="${INPUT_VERIFY}"
+
+        # Composite-action steps do not support the native timeout-minutes key,
+        # so bound the run with coreutils `timeout`. Validate the input is a
+        # positive integer before interpolating it into the command.
+        if ! [[ "${INPUT_TIMEOUT_MINUTES}" =~ ^[1-9][0-9]*$ ]]; then
+          echo "::error::timeout-minutes must be a positive integer (got: '${INPUT_TIMEOUT_MINUTES}')"
+          exit 1
+        fi
+
+        # Select the MegaLinter task from validate-all-codebase. REPOSITORY_*
+        # linters (Checkov, TruffleHog, Trivy, secret scanners) ignore
+        # VALIDATE_ALL_CODEBASE and always scan the whole repo, so on a
+        # changed-file run they add cost without incremental value. The
+        # megalint:changed task swaps in a config whose ENABLE_LINTERS omits
+        # every REPOSITORY_* entry and pins VALIDATE_ALL_CODEBASE=false;
+        # megalint:run keeps the full set for a complete scan.
+        case "${INPUT_VALIDATE_ALL}" in
+          true) megalint_task="megalint:run" ;;
+          false) megalint_task="megalint:changed" ;;
+          *)
+            echo "::error::validate-all-codebase must be 'true' or 'false' (got: '${INPUT_VALIDATE_ALL}')"
+            exit 1
+            ;;
+        esac
+
+        # --kill-after escalates to SIGKILL if the run ignores the initial
+        # SIGTERM, so the step is guaranteed to return even if a linter wedges.
+        rc=0
+        timeout --kill-after=30s "${INPUT_TIMEOUT_MINUTES}m" \
+          task -y "${megalint_task}" \
+            TARGET="${INPUT_WORKING_DIR}" \
+            MEGALINTER_IMAGE="${INPUT_MEGALINTER_IMAGE}" \
+            PULL_POLICY="${INPUT_PULL_POLICY}" \
+            VALIDATE_ALL_CODEBASE="${INPUT_VALIDATE_ALL}" \
+            MEGALINT_VERIFY="${INPUT_VERIFY}" || rc=$?
+
+        # timeout exits 124 when it had to terminate the run.
+        if [ "${rc}" -eq 124 ]; then
+          echo "::error::MegaLinter exceeded the ${INPUT_TIMEOUT_MINUTES}-minute timeout and was terminated."
+        fi
+        exit "${rc}"
 
     - name: Relocate reports if requested
       if: ${{ always() }}
