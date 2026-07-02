@@ -193,7 +193,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # The shfmt/shellcheck/kics/rust/alpine builder stages still pull
+      # The shfmt/shellcheck/rust/alpine builder stages still pull
       # from Docker Hub; authenticate to avoid anonymous-pull throttling.
       # Skipped when the secret is absent so unattended releases without
       # Docker Hub credentials degrade to anonymous pulls instead of failing.

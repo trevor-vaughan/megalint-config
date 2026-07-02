@@ -367,9 +367,9 @@ def _dedup_from_stages(
 # Docker Hub's anonymous-pull rate limiting, which returns
 # sporadic 400/429 errors on shared CI runner IPs.  gitleaks
 # lives under a different org on GHCR than on Docker Hub.
-# Images absent here (shfmt, shellcheck, kics, and the
-# official rust/alpine images) are not published to GHCR and
-# stay on docker.io.
+# Images absent here (shfmt, shellcheck, and the official
+# rust/alpine images) are not published to GHCR and stay on
+# docker.io.
 GHCR_IMAGE_REMAP = {
     "hadolint/hadolint": "ghcr.io/hadolint/hadolint",
     "zricethezav/gitleaks": "ghcr.io/gitleaks/gitleaks",

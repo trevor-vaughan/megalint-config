@@ -23,12 +23,19 @@ projects can share one linting policy.
 | Path                                           | Purpose                                                                                                                                                             |
 |------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `.mega-linter.yml`                             | The shared MegaLinter profile. Linters enabled, disabled, and configured.                                                                                           |
-| `.mega-linter.d/`                              | Drop-in directory for shared sub-configs (`.devskim.json`, `.jscpd.json`, `kics.config`, …). Anything here is auto-mounted into target repos at the workspace root. |
+| `.mega-linter.d/`                              | Drop-in directory for shared sub-configs (`.devskim.json`, `.jscpd.json`, `.grype.yaml`, …). Anything here is auto-mounted into target repos at the workspace root. |
 | `Taskfile.yml`                                 | Top-level task entrypoint.                                                                                                                                          |
 | `.taskfiles/megalint.yml`                      | Tasks for running MegaLinter locally.                                                                                                                               |
 | `.taskfiles/scripts/megalint-run.sh`           | The linter runner. Bind-mounts target + shared configs into the container.                                                                                          |
 | `.taskfiles/scripts/megalinter-sarif-chunk.sh` | Splits SARIF into per-linter markdown for LLM-driven remediation.                                                                                                   |
 | `.github/workflows/megalinter.yml`             | CI workflow that runs MegaLinter on every push and PR.                                                                                                              |
+
+> **Note — KICS removed for supply-chain safety.** `REPOSITORY_KICS` was
+> dropped from the shared profile after a reported upstream supply-chain
+> compromise. It is absent from `ENABLE_LINTERS`, so the slim flavor image no
+> longer builds or ships the KICS binary. Infrastructure-as-code
+> misconfiguration coverage is retained via `REPOSITORY_CHECKOV` and
+> `REPOSITORY_TRIVY`.
 
 ## Custom flavor image
 
@@ -292,6 +299,13 @@ ENABLE_LINTERS:
   - LINTER_TWO
 ```
 
+CI validates the shared config and the changed-files override on every change
+(`tests/test_config_sanity.py`, run via `task dev:test:config`): every
+enabled/disabled key must be a real MegaLinter linter that our slim flavor can
+install, and `.mega-linter-changed.yml` must stay in sync with the base
+(exactly the base linters minus the `REPOSITORY_*` entries). Run it locally
+with `task flavor:clone && task dev:test:config`.
+
 ## Per-target overrides
 
 A target repo can supply its own files at the workspace root to override
@@ -403,8 +417,9 @@ jobs:
 ```
 
 Inputs: `working-directory`, `validate-all-codebase`, `megalinter-image`,
-`reports-dir`, `pull-policy`, `verify`, `vuln-cache-dir`. Outputs: `reports-dir`,
-`sarif-file`. See `action.yml` for defaults.
+`reports-dir`, `pull-policy`, `verify`, `vuln-cache-dir`, `github-comment`,
+`timeout-minutes` (default 45). Outputs: `reports-dir`, `sarif-file`. See
+`action.yml` for defaults.
 
 ### Using in a GitLab repo
 
