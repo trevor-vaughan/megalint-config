@@ -99,9 +99,9 @@ task flavor:test
 
 #### `flavor:build`
 
-| Variable           | Default                          | Description                       |
-|--------------------|----------------------------------|-----------------------------------|
-| `FLAVOR_DIR`       | `./custom-flavor`                | Directory containing flavor files |
+| Variable           | Default                                  | Description                              |
+|--------------------|------------------------------------------|------------------------------------------|
+| `FLAVOR_DIR`       | `./custom-flavor`                        | Directory containing flavor files        |
 | `MEGALINTER_IMAGE` | `megalinter-local:v<MEGALINTER_VERSION>` | Full image reference (name:tag) to build |
 
 ## Configuration
@@ -360,7 +360,7 @@ in this repo's workflows:
 
 - Stages whose images are published to GHCR (`hadolint`, `gitleaks`) are
   rewritten to `ghcr.io` automatically by `_qualify_from_image`.
-- The remaining Docker Hub stages (`shfmt`, `shellcheck`, `kics`, and the
+- The remaining Docker Hub stages (`shfmt`, `shellcheck`, and the
   official `rust`/`alpine` images) are pulled authenticated when the
   optional `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repository secrets are
   set. The login step is skipped when they are absent (e.g. fork PRs), so

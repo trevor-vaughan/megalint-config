@@ -33,3 +33,15 @@ tasks:
     desc: "Run bats tests for shell scripts (tests/*.bats)"
     cmds:
       - bats {{.ROOT_DIR}}/tests/*.bats
+
+  test:config:
+    desc: "Validate MegaLinter config + overrides (descriptor checks need flavor:clone)"
+    deps: [sync]
+    cmds:
+      - mkdir -p "{{.TEST_OUTPUT}}"
+      - >-
+        uv run pytest
+        "{{.ROOT_DIR}}/tests/test_config_sanity.py"
+        -v --tb=short --junitxml="{{.TEST_OUTPUT}}/config-tests.xml"
+        {{.CLI_ARGS}}
+    dir: "{{.ROOT_DIR}}"

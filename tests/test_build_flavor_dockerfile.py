@@ -747,6 +747,48 @@ class TestGenerateDockerfile:
         )
         assert "ENTRYPOINT" in result
 
+    def test_declares_targetplatform_arg_unconditionally(
+        self, tmp_path,
+    ):
+        """TARGETPLATFORM must be declared even if no collected
+        descriptor line declares it.
+
+        Multiple linter install snippets (e.g. dotenv-linter)
+        reference $TARGETPLATFORM in a shell case statement
+        without themselves declaring `ARG TARGETPLATFORM` -
+        upstream relies on a single top-level declaration that
+        isn't tied to any one linter's descriptor. Without it,
+        the RUN step fails at build time: `set -eu` makes an
+        unset $TARGETPLATFORM reference fatal.
+        """
+        template_file = tmp_path / "Dockerfile"
+        template_file.write_text(
+            MINIMAL_TEMPLATE, encoding="utf-8",
+        )
+
+        installs = {
+            "apk": [],
+            "npm": [],
+            "pip": {},
+            "gem": [],
+            "cargo": [],
+            "dockerfile": [
+                (
+                    'RUN case "$TARGETPLATFORM" in \\\n'
+                    "  linux/amd64) ARCH=x86_64 ;; \\\n"
+                    "esac"
+                ),
+            ],
+        }
+
+        result = generate_dockerfile(
+            template_file, installs, "test",
+        )
+        arg_section = result.split("#ARG__START")[1].split(
+            "#ARG__END",
+        )[0]
+        assert "ARG TARGETPLATFORM" in arg_section
+
 
 # ── TestInjectSarifFmt ────────────────────────────
 

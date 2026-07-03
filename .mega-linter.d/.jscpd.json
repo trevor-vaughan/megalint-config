@@ -3,11 +3,14 @@
   "reporters": ["console"],
   "ignore": [
     "**/.git/**",
+    "vendor/**",
     "**/api/gen/**",
     "**/.build/**",
     "**/.claude/**",
     "**/.opencode/**",
     "**/.test-output/**",
-    "**/megalinter-reports/**"
+    "**/megalinter-reports/**",
+    "**/.mega-linter.d/**",
+    "**/.mega-linter.shared.yml"
   ]
 }

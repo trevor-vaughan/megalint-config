@@ -6,11 +6,11 @@ This directory contains MegaLinter findings split by linter. Each markdown file 
 
 This is the rule everything else serves: **no finding is ever skipped, silently dropped, or deleted.** Every finding in every file must end in exactly one of three terminal states.
 
-| State | Meaning | Committed? |
-|-------|---------|------------|
-| **Fixed** | You edited the source so the finding no longer applies, and validated it. | Yes — real fixes only. |
+| State                    | Meaning                                                                                                                  | Committed?                                      |
+|--------------------------|--------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------|
+| **Fixed**                | You edited the source so the finding no longer applies, and validated it.                                                | Yes — real fixes only.                          |
 | **Suppression proposed** | Proven false positive, suppressed via an approved mechanism (see [Handling false positives](#handling-false-positives)). | No — working-tree change, pending human review. |
-| **Blocked** | Needs a human decision you can't make yourself (see [Decisions that need a human](#decisions-that-need-a-human)). | No — left unresolved for a human. |
+| **Blocked**              | Needs a human decision you can't make yourself (see [Decisions that need a human](#decisions-that-need-a-human)).        | No — left unresolved for a human.               |
 
 **Reconcile before you declare a file done.** Count the findings you drove to a terminal state and compare against the `**Total findings: N**` header at the top of that file. The counts must match. If they don't, you lost findings — stop and recount before reporting.
 

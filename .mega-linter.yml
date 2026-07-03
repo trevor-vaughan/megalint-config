@@ -43,6 +43,26 @@ ADDITIONAL_EXCLUDED_DIRECTORIES:
   - "openspec" # OpenSpec specifications
   - "specs" # SpecKit specifications
   - ".lola" # Lola installation
+# NOTE: `vendor` is deliberately NOT listed above. Go treats only the
+# module-root vendor/ (marked by vendor/modules.txt) as vendored; a `vendor`
+# segment at any other depth is an ordinary first-party package that `go build`
+# and golangci-lint lint normally. ADDITIONAL_EXCLUDED_DIRECTORIES matches by
+# directory *basename* at every depth and cannot be root-anchored, so listing
+# `vendor` here would wrongly skip real code like pkg/foo/vendor/impl.go. The
+# root-anchored FILTER_REGEX_EXCLUDE below is used instead.
+
+# Skip the module-root vendored third-party tree for every file/list_of_files
+# linter. `^vendor/` is anchored to the repository root, so it excludes the Go
+# vendor/ tree (and a root-level PHP/composer vendor/) without touching a
+# first-party `vendor` package nested deeper in the tree. Unlike
+# ADDITIONAL_EXCLUDED_DIRECTORIES (which only prunes the full-codebase os.walk),
+# FILTER_REGEX_EXCLUDE also applies to changed-files runs, whose git-diff file
+# list is not directory-pruned. Project-mode linters ignore this list and are
+# handled in their own configs: jscpd via .mega-linter.d/.jscpd.json;
+# golangci-lint skips the module-root vendor/ natively via Go's ./... loading.
+# Consuming monorepos with vendored *nested* modules (sub/mod/vendor/) can add
+# their own paths in a repo-local override.
+FILTER_REGEX_EXCLUDE: '^vendor/'
 
 # =============================================================================
 # Enabled Linters
@@ -66,6 +86,32 @@ ENABLE_LINTERS:
   - PYTHON_ISORT # Python import sorting
 
   # ---------------------------------------------------------------------------
+  # Additional Languages (valuable for org-wide reuse)
+  # ---------------------------------------------------------------------------
+  # Not present in this repository, but activated for consuming repos via
+  # EXTENDS. MegaLinter only runs a linter when matching files exist, so these
+  # are inert here and add no cost to repos that lack the language.
+  #
+  # GO_GOLANGCI_LINT is a meta-linter bundling govet, staticcheck, errcheck,
+  # gosec, misspell, and ~100 others, so GO_REVIVE is disabled below to avoid
+  # duplicate findings. See:
+  #   - https://megalinter.io/latest/descriptors/go_golangci_lint/
+  - GO_GOLANGCI_LINT # Go meta-linter (bundles govet/staticcheck/gosec/errcheck)
+  - RUBY_RUBOCOP # Ruby linter + formatter (supports auto-fix)
+  - MAKEFILE_CHECKMAKE # Makefile best-practices linter
+  - PROTOBUF_PROTOLINT # Protocol Buffers (.proto) linter (supports auto-fix)
+  - SQL_SQLFLUFF # SQL linter + formatter (dialect defaulted below; supports auto-fix)
+  # TypeScript/JavaScript: ESLint for linting, Prettier for formatting. The
+  # *_STANDARD alternatives are disabled below because they conflict with ESLint.
+  # Modern ESLint core no longer enforces formatting, so ESLint + Prettier do not
+  # conflict out of the box; consuming repos that add stylistic ESLint plugins
+  # should also add eslint-config-prettier to keep the two from fighting.
+  - TYPESCRIPT_ES # TypeScript linting via ESLint (supports auto-fix)
+  - TYPESCRIPT_PRETTIER # TypeScript formatting (supports auto-fix)
+  - JAVASCRIPT_ES # JavaScript linting via ESLint (supports auto-fix)
+  - JAVASCRIPT_PRETTIER # JavaScript formatting (supports auto-fix)
+
+  # ---------------------------------------------------------------------------
   # Configuration File Formats
   # ---------------------------------------------------------------------------
   - JSON_JSONLINT # JSON syntax validation
@@ -75,6 +121,7 @@ ENABLE_LINTERS:
   - MARKDOWN_MARKDOWN_LINK_CHECK # Markdown link checking
   - MARKDOWN_MARKDOWN_TABLE_FORMATTER # Markdown table formatting (supports auto-fix)
   - EDITORCONFIG_EDITORCONFIG_CHECKER # Cross-editor consistency
+  - ENV_DOTENV_LINTER # .env file linting (supports auto-fix)
 
   # ---------------------------------------------------------------------------
   # Infrastructure-as-Code (valuable for org-wide reuse)
@@ -85,6 +132,11 @@ ENABLE_LINTERS:
   - KUBERNETES_KUBECONFORM # Kubernetes manifest validation
   - TERRAFORM_TFLINT # Terraform configuration validation
   - CLOUDFORMATION_CFN_LINT # AWS CloudFormation validation
+  - ANSIBLE_ANSIBLE_LINT # Ansible playbook/role best-practices linting
+  # Spectral lives in the API descriptor, so the linter key is API_SPECTRAL
+  # (not OPENAPI_SPECTRAL — that schema alias has no descriptor and would be
+  # silently dropped from the generated slim flavor).
+  - API_SPECTRAL # OpenAPI/Swagger/AsyncAPI specification linting (spectral)
 
   # ---------------------------------------------------------------------------
   # Security & Compliance (multi-layer defense)
@@ -92,7 +144,6 @@ ENABLE_LINTERS:
   - REPOSITORY_CHECKOV # Infrastructure security scanning
   - REPOSITORY_DEVSKIM # Security pattern detection
   - REPOSITORY_GRYPE # Vulnerability scanning
-  - REPOSITORY_KICS # Infrastructure security analysis
   - REPOSITORY_BETTERLEAKS # Secrets detection (gitleaks successor; reads .gitleaks.toml)
   - REPOSITORY_SECRETLINT # Secrets detection
   - REPOSITORY_TRIVY # Container/dependency security
@@ -121,6 +172,26 @@ DISABLE_LINTERS:
   # Secrets - superseded by betterleaks (same author, drop-in, reads .gitleaks.toml)
   - REPOSITORY_GITLEAKS # Replaced by REPOSITORY_BETTERLEAKS (MegaLinter 9.6.0)
 
+  # Go - redundant with golangci-lint (which bundles govet/staticcheck/gosec/etc.)
+  - GO_REVIVE # Overlapping findings with GO_GOLANGCI_LINT
+
+  # Rust - needs a full rustup/cargo toolchain (clippy is a rustup component),
+  # which the slim custom flavor cannot bootstrap: the generator emits a bare
+  # `cargo install` and the image build fails with `cargo: not found`. A
+  # consuming Rust repo can re-enable RUST_CLIPPY and build its own flavor.
+  - RUST_CLIPPY # Removed: incompatible with the slim flavor's build model
+
+  # JS/TS - conflict with the chosen ESLint linters (*_ES)
+  - TYPESCRIPT_STANDARD # Conflicts with TYPESCRIPT_ES
+  - JAVASCRIPT_STANDARD # Conflicts with JAVASCRIPT_ES
+
+  # Security - dropped after a reported upstream supply-chain compromise.
+  # Removed from ENABLE_LINTERS above so the slim flavor never builds or
+  # ships the KICS binary (the flavor is generated from ENABLE_LINTERS
+  # alone). IaC misconfiguration coverage is retained via REPOSITORY_CHECKOV
+  # and REPOSITORY_TRIVY.
+  - REPOSITORY_KICS # Removed: upstream supply-chain compromise
+
   # Other
   - REPOSITORY_KINGFISHER # Redundant with other security tools
 
@@ -131,6 +202,14 @@ DISABLE_LINTERS:
 # Python: Comprehensive ruff rule selection
 PYTHON_RUFF_ARGUMENTS:
   - "--select=E,W,F,I,N,UP,YTT,BLE,B,A,COM,C4,DTZ,T10,DJ,EM,EXE,ICN,G,INP,PIE,T20,PT,Q,RSE,RET,SLF,SIM,TID,TCH,INT,ARG,PTH,TD,FIX,ERA,PD,PGH,PL,TRY,FLY,NPY,PERF,FURB,LOG,RUF"
+
+# SQLFluff: a SQL dialect is mandatory — sqlfluff hard-errors without one.
+# Default to `ansi` (the portable lowest common denominator) so the shared base
+# never fails out of the box. Consuming repos override for their engine by
+# shipping a .sqlfluff (e.g. dialect = postgres) or setting this argument.
+SQL_SQLFLUFF_ARGUMENTS:
+  - "--dialect"
+  - "ansi"
 
 # Markdown: Disable language specification requirement for code blocks
 MARKDOWN_MARKDOWNLINT_ARGUMENTS:
@@ -145,14 +224,6 @@ MARKDOWN_FILTER_REGEX_EXCLUDE: '(^|/)(AGENTS|CLAUDE)\.md$'
 # Hadolint: Per-file mode ensures inline ignore pragmas work correctly.
 # In list_of_files mode (default), hadolint can misattribute inline ignores.
 DOCKERFILE_HADOLINT_CLI_LINT_MODE: file
-
-# KICS: Query and path exclusions are in kics.config. In this repo it lives
-# in .mega-linter.d/ and is overlaid at the workspace root by the runner.
-# REPOSITORY_KICS_ARGUMENTS is not reliably passed for REPOSITORY-scoped linters.
-REPOSITORY_KICS_ARGUMENTS:
-  - "--minimal-ui"
-  - "--no-color"
-  - "--fail-on=high,medium"
 
 # Checkov: The `github_configuration` framework works on the read-only
 # workspace mount because megalint-run.sh sets CKV_GITHUB_CONF_DIR_NAME
@@ -191,9 +262,62 @@ REPOSITORY_SECRETLINT_ARGUMENTS:
 # TruffleHog: Path exclusions require a separate file passed via CLI flag.
 # Unlike other REPOSITORY linters, trufflehog does not support path
 # exclusion in its config file — only custom detector definitions.
+#
+# The descriptor defaults to `filesystem .`, which walks the raw working
+# tree — including gitignored/untracked content (.venv/, node_modules/,
+# build output, ...). trufflehog's filesystem mode has no .gitignore
+# support (upstream feature request, unresolved:
+# https://github.com/trufflesecurity/trufflehog/issues/3356), so those
+# directories are hardcoded into "filesystem" false positives with no
+# generic way to exclude them across arbitrary target repos.
+#
+# We switch to `git file://.` instead: it reads git objects directly, so
+# anything not committed is invisible to it by construction — no exclude
+# list needed. Tradeoff: git mode scans commit history, not just the
+# working tree, so it will also catch secrets that were committed and
+# later removed. That's a feature for a secrets scanner, but it is a
+# behavior change from "current tree only" — worth knowing before
+# reviewing a sudden new finding.
+#
+# --branch=HEAD bounds the scan to commits reachable from whatever ref is
+# currently checked out, rather than trufflehog's default of every branch
+# in the mounted .git (including unrelated local/remote-tracking branches
+# that happen to exist in the clone). HEAD is a symbolic ref that always
+# resolves to the current checkout, so this stays correct across targets
+# without hardcoding a branch name. Consuming repos that want to bound scan
+# depth further can add --since-commit/--max-depth via
+# REPOSITORY_TRUFFLEHOG_ARGUMENTS in their own config.
+#
+# "filesystem" and "." (the descriptor's default cli_lint_extra_args) are
+# stripped via COMMAND_REMOVE_ARGUMENTS and replaced with "git file://.".
+#
+# --no-verification is a CI-safe default. Verification calls arbitrary
+# external APIs (AWS STS, Slack, GitHub, ...) to confirm a detected secret is
+# live; those endpoints can block GitHub Actions runner IPs and hang the run
+# indefinitely, and MegaLinter has no per-linter timeout. This leaves
+# regex/entropy detection (which overlaps REPOSITORY_BETTERLEAKS and
+# REPOSITORY_SECRETLINT). Consuming repos that want live verification can
+# override REPOSITORY_TRUFFLEHOG_ARGUMENTS in their own config, ideally on a
+# network-tolerant, non-PR job.
+#
+# --only-verified (also a descriptor default) is incompatible with
+# --no-verification: since verification never runs, nothing is ever
+# "verified" and every result would be silently filtered out, so --fail
+# would never trigger even with real secrets present. It is stripped via
+# COMMAND_REMOVE_ARGUMENTS alongside "filesystem"/".". --no-update is
+# dropped from the arguments below (kept only as a descriptor default) to
+# avoid "flag 'no-update' cannot be repeated".
 REPOSITORY_TRUFFLEHOG_ARGUMENTS:
+  - "git"
+  - "file://."
+  - "--branch=HEAD"
+  - "--no-verification"
   - "--exclude-paths"
   - ".trufflehog-exclude-paths.txt"
+REPOSITORY_TRUFFLEHOG_COMMAND_REMOVE_ARGUMENTS:
+  - "filesystem"
+  - "."
+  - "--only-verified"
 
 # Enable GITHUB_TOKEN for zizmor security scanner
 ACTION_ZIZMOR_UNSECURED_ENV_VARIABLES:
