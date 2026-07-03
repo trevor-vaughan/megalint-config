@@ -75,6 +75,8 @@ def parse_config(config_path: str) -> dict[str, Any]:
 
 def main():
     """CLI entry point."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     if len(sys.argv) != 2:  # noqa: PLR2004
         logger.error(
             "Usage: parse_megalinter_config.py"

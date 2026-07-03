@@ -7,7 +7,7 @@ This document covers the automated generation of custom MegaLinter flavors from 
 The custom flavor generation system converts your `.mega-linter.yml` configuration into a complete custom flavor package that includes:
 
 - **Dockerfile** - Container image definition with pre-configured linters
-- **Flavor configuration** - `mega-linter-flavor.yml` with the linter list
+- **Flavor configuration** - `mega-linter-flavor.yml` with the flavor name, the upstream MegaLinter version it was built against, and the linter list
 - **Validation** - Automated testing and verification tools
 
 This eliminates the need to manage configuration files across multiple repositories and provides a consistent, versioned linting experience.
@@ -145,7 +145,7 @@ A complete custom flavor contains:
 ```
 custom-flavor/
 ├── Dockerfile                 # Container image definition
-└── mega-linter-flavor.yml     # Flavor configuration (linter list)
+└── mega-linter-flavor.yml     # Flavor config (name, megalinter_version, linter list)
 ```
 
 ### Dockerfile

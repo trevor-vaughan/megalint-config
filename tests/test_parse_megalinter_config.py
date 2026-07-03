@@ -1,5 +1,7 @@
 # tests/test_parse_megalinter_config.py
 import importlib.util
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -103,6 +105,18 @@ DISABLE_LINTERS:
             parse_config(fname)
     finally:
         Path(fname).unlink()
+
+
+def test_cli_emits_success_output(tmp_path):
+    cfg = tmp_path / ".mega-linter.yml"
+    cfg.write_text("ENABLE_LINTERS:\n  - BASH_SHELLCHECK\n", encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, str(script_path), str(cfg)],
+        capture_output=True, text=True, check=True,
+    )
+    combined = proc.stdout + proc.stderr
+    assert "Found 1 enabled linters" in combined
+    assert "BASH_SHELLCHECK" in combined
 
 
 def test_parse_empty_enable_linters():

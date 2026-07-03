@@ -110,6 +110,18 @@ if [[ -n "${MEGALINT_TMPDIR:-}" ]]; then
 	use_tempdir=true
 fi
 
+# Tempdir staging clones the target into an ephemeral workspace and only
+# persists megalinter-reports/ back on exit (see cleanup() below); any
+# in-place fixes a linter makes there would be silently discarded, which
+# contradicts APPLY_FIXES' whole purpose. Refuse the combination outright
+# rather than let fixes vanish.
+if "${use_tempdir}" && [[ "${apply_fixes}" != "none" ]]; then
+	echo "MEGALINT_TMPDIR staging is incompatible with APPLY_FIXES=${apply_fixes}:" \
+		"fixes made in the ephemeral clone would be discarded. Unset MEGALINT_TMPDIR" \
+		"to auto-fix in place, or unset APPLY_FIXES to lint read-only." >&2
+	exit 1
+fi
+
 # Vulnerability-DB cache. When set (even to the default), the host
 # directory is bind-mounted at /tmp/xdg-cache so trivy/grype DBs
 # survive between runs. Empty string disables caching (old behavior).
@@ -183,8 +195,11 @@ if "${use_tempdir}"; then
 	cleanup() {
 		# Persist reports back to target before destroying the stage.
 		if [[ -d "${workspace}/megalinter-reports" ]]; then
-			rm -rf "${target}/megalinter-reports"
-			cp -a "${workspace}/megalinter-reports" "${target}/megalinter-reports" || true
+			if ! { rm -rf "${target}/megalinter-reports" &&
+				cp -a "${workspace}/megalinter-reports" \
+					"${target}/megalinter-reports"; }; then
+				echo "WARNING: failed to persist reports to ${target}/megalinter-reports" >&2
+			fi
 		fi
 		rm -rf "${workspace}"
 	}

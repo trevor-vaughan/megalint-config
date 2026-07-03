@@ -1,13 +1,17 @@
 ---
 name: MegaLinter Dogfooding
 
-# yamllint disable-line rule:truthy
-on:
-  push:
+"on":
+  # Pull requests are the only diff-linting trigger. A push trigger is
+  # deliberately omitted: pushes to a feature branch are already covered by
+  # that branch's pull request (a push trigger would lint the same commit
+  # twice), while pushes to `main` and tag pushes lint zero changed files
+  # (diff base == head) and emit an empty-runs SARIF that fails code-scanning
+  # upload. The weekly schedule refreshes `main`'s Code Scanning baseline.
   pull_request:
     branches: [main]
   schedule:
-    - cron: "0 6 * * 1" # Mondays at 6 AM UTC
+    - cron: "0 6 * * 1" # Mondays at 6 AM UTC — full-scan baseline for main
 
 permissions:
   contents: read
@@ -34,7 +38,7 @@ jobs:
       - name: Compute cache week
         id: week
         shell: bash
-        run: echo "week=$(date -u '+%Y-W%V')" >> "$GITHUB_OUTPUT"
+        run: echo "week=$(date -u '+%G-W%V')" >> "$GITHUB_OUTPUT"
 
       - name: Restore vuln-db cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -62,7 +66,9 @@ jobs:
             mega-linter.log
 
       - name: Upload SARIF to GitHub Code Scanning
-        if: ${{ success() || failure() }}
+        # Skip when the SARIF has no runs: GitHub's upload API rejects an
+        # empty-runs report ("1 item required; only 0 were supplied").
+        if: ${{ (success() || failure()) && steps.megalint.outputs.sarif-has-results == 'true' }}
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: ${{ steps.megalint.outputs.sarif-file }}

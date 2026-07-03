@@ -80,6 +80,14 @@ outputs:
   sarif-file:
     description: "Absolute path to megalinter-report.sarif inside reports-dir."
     value: ${{ steps.publish.outputs.sarif-file }}
+  sarif-has-results:
+    description: >-
+      "true" if the SARIF report exists and contains at least one run,
+      otherwise "false". GitHub's code-scanning upload API rejects a SARIF
+      with an empty `runs` array ("1 item required; only 0 were supplied"),
+      which MegaLinter emits when a changed-files run matches no
+      lint-relevant files. Gate the upload step on this value.
+    value: ${{ steps.publish.outputs.sarif-has-results }}
 
 runs:
   using: composite
@@ -165,8 +173,9 @@ runs:
             VALIDATE_ALL_CODEBASE="${INPUT_VALIDATE_ALL}" \
             MEGALINT_VERIFY="${INPUT_VERIFY}" || rc=$?
 
-        # timeout exits 124 when it had to terminate the run.
-        if [ "${rc}" -eq 124 ]; then
+        # timeout exits 124 on SIGTERM termination, or 137 (128+9) when it had
+        # to escalate to SIGKILL via --kill-after. Both mean "we timed out".
+        if [ "${rc}" -eq 124 ] || [ "${rc}" -eq 137 ]; then
           echo "::error::MegaLinter exceeded the ${INPUT_TIMEOUT_MINUTES}-minute timeout and was terminated."
         fi
         exit "${rc}"
@@ -180,24 +189,11 @@ runs:
         INPUT_WORKING_DIR: ${{ inputs.working-directory }}
       run: |
         set -euo pipefail
-        default="${RESOLVE_DEFAULT}"
-        target="${RESOLVE_REPORTS}"
-        working_dir="${INPUT_WORKING_DIR}"
-
-        # Always move the log into the default reports-dir first (if both exist),
-        # so the log travels with the reports regardless of relocation.
-        if [ -f "${working_dir}/mega-linter.log" ] && [ -d "${default}" ]; then
-          mv "${working_dir}/mega-linter.log" "${default}/"
-        fi
-
-        # Then optionally relocate the whole reports-dir to a non-default target.
-        # Guard with -d so a MegaLinter crash before reports were written doesn't
-        # mask the original failure with a missing-source mv error.
-        if [ "${default}" != "${target}" ] && [ -d "${default}" ]; then
-          mkdir -p "$(dirname "${target}")"
-          rm -rf "${target}"
-          mv "${default}" "${target}"
-        fi
+        # A relocation failure must not fail the job and mask the lint result
+        # (parallels ci/gitlab/run.sh). Warn instead.
+        bash "${{ github.action_path }}/.taskfiles/scripts/megalint-relocate-reports.sh" \
+          "${INPUT_WORKING_DIR}" "${RESOLVE_DEFAULT}" "${RESOLVE_REPORTS}" \
+          || echo "::warning::report relocation failed; leaving reports in the default location"
 
     - name: Publish outputs
       id: publish
@@ -208,8 +204,31 @@ runs:
       run: |
         set -euo pipefail
         target="${RESOLVE_REPORTS}"
+        sarif="${target}/megalinter-report.sarif"
         echo "reports-dir=${target}" >> "$GITHUB_OUTPUT"
-        echo "sarif-file=${target}/megalinter-report.sarif" >> "$GITHUB_OUTPUT"
+        echo "sarif-file=${sarif}" >> "$GITHUB_OUTPUT"
+
+        # GitHub's code-scanning upload API rejects a SARIF whose `runs`
+        # array is empty ("1 item required; only 0 were supplied"). That
+        # happens when a changed-files run matches no lint-relevant files.
+        # Report whether the SARIF is uploadable so callers can gate the
+        # upload step instead of failing the job. A missing file (linter
+        # crashed before writing one) counts as no results. `.runs` absent
+        # or null yields length 0 in jq, so both fall through to false.
+        #
+        # jq is required to read the SARIF. A missing jq is a broken runner,
+        # not an empty report: silently reporting "no results" would skip the
+        # upload and hide real findings, so fail loud instead.
+        if ! command -v jq >/dev/null 2>&1; then
+          echo "jq is required to evaluate the SARIF report but was not found on PATH" >&2
+          exit 1
+        fi
+        has_results=false
+        if [ -f "${sarif}" ] \
+          && [ "$(jq '.runs | length' "${sarif}" 2>/dev/null || echo 0)" -gt 0 ]; then
+          has_results=true
+        fi
+        echo "sarif-has-results=${has_results}" >> "$GITHUB_OUTPUT"
 
     - name: Write job summary
       if: ${{ always() }}

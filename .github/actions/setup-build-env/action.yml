@@ -7,6 +7,10 @@ inputs:
     description: Whether to install uv
     required: false
     default: "true"
+  enable-bats:
+    description: Whether to install bats (only needed for the shell-test gate)
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -21,3 +25,8 @@ runs:
       uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
       with:
         repo-token: ${{ github.token }}
+
+    - name: Install bats
+      if: inputs.enable-bats == 'true'
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y bats

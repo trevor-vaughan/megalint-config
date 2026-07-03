@@ -110,3 +110,41 @@ EOF
   [[ "$output" == *"No SARIF report"* ]]
   [ ! -d "${CHUNK_DIR}" ]
 }
+
+@test "log without --- separator keeps the body in the chunk" {
+  write_empty_sarif
+  cat > "${REPORT_DIR}/linters_logs/PYTHON_RUFF-ERROR.log" <<'EOF'
+Ruff: python linter.
+https://docs.astral.sh/ruff/
+E501 line too long at file.py:10
+E502 backslash is redundant at file.py:12
+EOF
+
+  run bash "${CHUNKER}" "${FAKE_ROOT}"
+
+  [ "$status" -eq 0 ]
+  [ -f "${CHUNK_DIR}/python-ruff.md" ]
+  grep -q "E501 line too long" "${CHUNK_DIR}/python-ruff.md"
+  grep -q "E502 backslash is redundant" "${CHUNK_DIR}/python-ruff.md"
+}
+
+@test "location-less findings render a placeholder, not 'null'" {
+  cat > "${REPORT_DIR}/megalinter-report.sarif" <<'EOF'
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {"driver": {"name": "Test (MegaLinter shellcheck)"}},
+      "results": [
+        {"ruleId": "SC9999", "level": "error", "message": {"text": "no-location finding"}, "locations": []}
+      ]
+    }
+  ]
+}
+EOF
+  run bash "${CHUNKER}" "${FAKE_ROOT}"
+  [ "$status" -eq 0 ]
+  [ -f "${CHUNK_DIR}/shellcheck.md" ]
+  grep -q "## File: (no location)" "${CHUNK_DIR}/shellcheck.md"
+  ! grep -q "## File: null" "${CHUNK_DIR}/shellcheck.md"
+}

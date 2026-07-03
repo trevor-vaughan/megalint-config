@@ -271,6 +271,45 @@ EOF
     "none"
 
   [ "$status" -eq 0 ]
-  # In-target mode doesn't mount .git separately (it's part of the workspace mount)
-  ! grep -qE '\.git:/tmp/lint/\.git:' "${ENGINE_ARGS_FILE}"
+  # In-target changed-files mode overlays a nested rw .git mount so MegaLinter
+  # can write .git/FETCH_HEAD during git fetch (see megalint-run.sh).
+  grep -qE '\.git:/tmp/lint/\.git:rw,z$' "${ENGINE_ARGS_FILE}"
+  ! grep -qE '\.git:/tmp/lint/\.git:ro,z$' "${ENGINE_ARGS_FILE}"
+}
+
+@test "tempdir mode warns (does not silently swallow) when report persist fails" {
+  cat > "${STUB_DIR}/rsync" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "${STUB_DIR}/rsync"
+  PATH="${STUB_DIR}:${PATH}"
+
+  # Make the target unwritable so the cleanup cp/rm cannot persist reports.
+  chmod 500 "${TARGET}"
+
+  MEGALINT_TMPDIR=1 \
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" "none"
+
+  chmod 700 "${TARGET}"  # restore so teardown can clean up
+  [[ "$output" == *"WARNING"* && "$output" == *"persist"* ]]
+}
+
+@test "tempdir staging refuses APPLY_FIXES (fixes would be discarded)" {
+  cat > "${STUB_DIR}/rsync" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "${STUB_DIR}/rsync"
+  PATH="${STUB_DIR}:${PATH}"
+
+  MEGALINT_TMPDIR=1 \
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" "all"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"APPLY_FIXES"* && "$output" == *"MEGALINT_TMPDIR"* ]]
 }

@@ -427,3 +427,23 @@ def test_load_config_rejects_non_mapping(tmp_path: Path):
     bad.write_text("- just\n- a\n- list\n")
     with pytest.raises(validate_config.ConfigError, match="must be a YAML mapping"):
         validate_config.load_config(bad)
+
+
+def test_find_descriptors_dir_picks_highest_version(tmp_path: Path):
+    # "1.0.0" is included because plain lexical sort ranks
+    # "megalinter-v1.0.0" first (its "." byte sorts below "0"), which would
+    # make a naive fix that only reorders "2"/"9.6.0"/"10.0.0" pass by luck.
+    cache = tmp_path / ".cache"
+    for ver in ("1.0.0", "2", "9.6.0", "10.0.0"):
+        d = cache / f"megalinter-v{ver}" / "megalinter" / "descriptors"
+        d.mkdir(parents=True)
+    result = validate_config.find_descriptors_dir(cache)
+    assert result == cache / "megalinter-v10.0.0" / "megalinter" / "descriptors"
+
+
+def test_resolve_ref_strips_only_pointer_prefix():
+    # A $ref pointing at a definitions key literally named "#foo".
+    # lstrip("#/") would wrongly strip the leading '#' of that key too.
+    schema = {"#foo": {"ok": 1}}
+    result = validate_config._resolve_ref(schema, "#/#foo")  # noqa: SLF001
+    assert result == {"ok": 1}

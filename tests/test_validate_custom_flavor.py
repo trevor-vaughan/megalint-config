@@ -290,6 +290,17 @@ def test_validate_flavor_valid_dockerfile(flavor_files_factory):
     assert result["checks"]["dockerfile_valid"] is True
 
 
+def test_validate_flavor_config_must_be_a_mapping(flavor_files_factory):
+    """Test flavor config as a YAML list raises a clear error."""
+    temp_dir = flavor_files_factory({
+        "mega-linter-flavor.yml": "- a\n- b\n",
+        "Dockerfile": "FROM oxsecurity/megalinter:v9\nCOPY . /tmp/lint",
+    })
+
+    with pytest.raises(ValidationError, match="mapping"):
+        validate_flavor(temp_dir)
+
+
 def test_cli_main_function_exists():
     """Test that the main function exists."""
     assert callable(main)

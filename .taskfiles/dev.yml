@@ -19,13 +19,15 @@ tasks:
     dir: "{{.ROOT_DIR}}"
 
   test:
-    desc: "Run Python test suite (output to .test-output/)"
+    desc: "Run Python test suite (MODE=human|llm; output to .test-output/)"
     deps: [sync]
+    vars:
+      PYTEST_FLAGS: '{{if eq (.MODE | default "human") "llm"}}-q --tb=line{{else}}-v --tb=short{{end}}'
     cmds:
       - mkdir -p "{{.TEST_OUTPUT}}"
       - >-
-        uv run pytest
-        -v --tb=short --junitxml="{{.TEST_OUTPUT}}/flavor-tests.xml"
+        uv run pytest {{.PYTEST_FLAGS}}
+        --junitxml="{{.TEST_OUTPUT}}/flavor-tests.xml"
         {{.CLI_ARGS}}
     dir: "{{.ROOT_DIR}}"
 

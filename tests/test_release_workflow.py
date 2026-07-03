@@ -1,11 +1,18 @@
 """Tests for custom-flavor-release.yml workflow."""
 
+import re
 from pathlib import Path
 
 import pytest
 import yaml
 
 _EXPECTED_CRON = "0 6 * * 0"
+
+
+def _release_workflow():
+    workflow_path = Path(".github/workflows/custom-flavor-release.yml")
+    with workflow_path.open() as f:
+        return yaml.safe_load(f)
 
 
 def test_release_workflow_file_exists():
@@ -214,6 +221,33 @@ def test_create_release_step_gated_on_identity():
     assert "if" in release_step
     assert "create_release" in release_step["if"]
     assert "refs/heads/main" not in release_step["if"]
+
+
+def test_base_image_pinned_to_validated_version():
+    """Release base image must pin the exact version PR-validation clones."""
+    workflow = _release_workflow()
+    default_base = workflow["env"]["DEFAULT_BASE_IMAGE"]
+    flavor_yml = Path(".taskfiles/flavor.yml").read_text(encoding="utf-8")
+    m = re.search(
+        r'MEGALINTER_VERSION[^\n]*default\s+"([0-9]+\.[0-9]+\.[0-9]+)"',
+        flavor_yml,
+    )
+    assert m, "could not read pinned MEGALINTER_VERSION default from flavor.yml"
+    pinned = m.group(1)
+    assert default_base == f"ghcr.io/oxsecurity/megalinter:v{pinned}", (
+        f"DEFAULT_BASE_IMAGE must pin v{pinned} to match PR validation"
+    )
+
+
+def test_repo_scan_uses_freshly_built_test_image():
+    """Finding #1: the repo scan must run the :test image built this run."""
+    workflow = _release_workflow()
+    steps = workflow["jobs"]["release"]["steps"]
+    scan = next(s for s in steps if s.get("id") == "repo-scan")
+    with_params = scan["with"]
+    assert with_params["megalinter-image"] == "megalinter-custom-flavor:test"
+    assert with_params["pull-policy"] == "never"
+    assert with_params["verify"] == "skip"
 
 
 if __name__ == "__main__":
