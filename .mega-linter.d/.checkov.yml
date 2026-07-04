@@ -9,6 +9,15 @@
 # To generate a config from CLI flags:
 #   checkov --create-config .checkov.yml [flags...]
 
+# Skip frameworks that scan remote VCS configuration over the GitHub API
+# (branch protection, org settings) rather than local files. Checkov persists
+# their responses to a transient conf dir under the working directory; the
+# MegaLinter runner mounts the workspace read-only, so that persist crashes
+# with EROFS ("Read-only file system: '.megalinter_github_conf'"). These
+# frameworks lint no local source, so skipping them is pure gain.
+skip-framework:
+  - github_configuration
+
 # Paths to skip (regex, relative to working directory).
 skip-path:
   - .cache

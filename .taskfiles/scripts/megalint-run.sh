@@ -304,15 +304,19 @@ if [[ "${apply_fixes}" == "none" ]]; then
 	# the read-only workspace. TMPDIR is the POSIX standard; the others
 	# are tool-specific.
 	#
-	# Checkov quirk (verified against checkov 3.2.529, the version
-	# bundled with megalinter:v9): Github.setup_conf_dir() in
-	# checkov/github/dal.py ignores CKV_GITHUB_CONF_DIR_PATH and
-	# computes the directory as os.path.join(os.getcwd(),
-	# CKV_GITHUB_CONF_DIR_NAME). When the workspace is mounted
-	# read-only at /tmp/lint, the default name `github_conf` resolves
-	# to `/tmp/lint/github_conf` and persist_all_confs() crashes with
-	# EROFS. POSIX os.path.join(a, b) returns b when b is absolute, so
-	# we abuse the NAME slot to inject an absolute path on the tmpfs.
+	# Checkov quirk: its github_configuration framework persists GitHub API
+	# responses to a conf dir resolved as os.path.join(os.getcwd(),
+	# CKV_GITHUB_CONF_DIR_NAME). On the read-only /tmp/lint mount that
+	# crashes with EROFS. The primary fix is `skip-framework:
+	# github_configuration` in the Checkov config (.checkov.yml and
+	# .mega-linter.d/.checkov.yml), which stops the runner from ever creating
+	# the dir. The CKV_GITHUB_CONF_DIR_NAME below injects an absolute tmpfs
+	# path (POSIX os.path.join returns the second arg when it is absolute) as
+	# a defence-in-depth backstop for target repos that override the Checkov
+	# config without the skip. NOTE: MegaLinter >= v9.6.0's
+	# CheckovLinter.before_lint_files() overwrites CKV_GITHUB_CONF_DIR_NAME
+	# with a relative path, defeating this backstop on the pinned base image —
+	# the config skip is what protects that image.
 	# In in-target mode, .git is inside the ro workspace mount. MegaLinter's
 	# changed-files mode needs to write .git/FETCH_HEAD during git fetch, so
 	# overlay a nested rw mount (same pattern as megalinter-reports above).
