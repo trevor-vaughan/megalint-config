@@ -99,16 +99,23 @@ def find_descriptors_dir(cache_root: str | Path = ".cache") -> Path | None:
     """Locate the cached MegaLinter descriptors directory.
 
     The flavor:clone task caches the source at
-    .cache/megalinter-v<version>/megalinter/descriptors. The version is
-    discovered rather than hardcoded so this tracks MEGALINTER_VERSION.
+    .cache/megalinter-v<version>/megalinter/descriptors. When several clones
+    coexist, the highest semantic version wins (a lexical sort would pick
+    megalinter-v2 over megalinter-v9.6.0).
 
     Returns:
-        The descriptors directory, or None if the clone is absent.
+        The descriptors directory, or None if no clone is present.
     """
     root = Path(cache_root)
     if not root.is_dir():
         return None
-    for clone in sorted(root.glob("megalinter-v*")):
+
+    def _version_key(clone: Path) -> tuple[int, ...]:
+        raw = clone.name.removeprefix("megalinter-v")
+        parts = [int(token) if token.isdigit() else -1 for token in raw.split(".")]
+        return tuple(parts)
+
+    for clone in sorted(root.glob("megalinter-v*"), key=_version_key, reverse=True):
         descriptors = clone / "megalinter" / "descriptors"
         if descriptors.is_dir():
             return descriptors
@@ -118,7 +125,7 @@ def find_descriptors_dir(cache_root: str | Path = ".cache") -> Path | None:
 def _resolve_ref(schema: dict[str, Any], ref: str) -> dict[str, Any]:
     """Resolve a local JSON-Schema $ref (e.g. #/definitions/foo)."""
     node: Any = schema
-    for part in ref.lstrip("#/").split("/"):
+    for part in ref.removeprefix("#/").split("/"):
         node = node[part]
     return node
 

@@ -22,27 +22,20 @@ sh -c "${task_installer}" -- -b /usr/local/bin "${TASK_VERSION}"
 
 cd /tmp/megalint-runner
 
+lint_rc=0
 VALIDATE_ALL_CODEBASE="${MEGALINT_VALIDATE_ALL_CODEBASE}" \
 	task -y megalint:run \
 	TARGET="${MEGALINT_WORKING_DIRECTORY}" \
 	MEGALINTER_IMAGE="${MEGALINTER_IMAGE}" \
 	PULL_POLICY="${MEGALINT_PULL_POLICY}" \
-	MEGALINT_VERIFY="${MEGALINT_VERIFY}"
+	MEGALINT_VERIFY="${MEGALINT_VERIFY}" || lint_rc=$?
 
-# Always move the log into the default reports-dir first (if both exist),
-# so the log travels with the reports regardless of relocation.
-default_reports="${MEGALINT_WORKING_DIRECTORY}/megalinter-reports"
-if [[ -f "${MEGALINT_WORKING_DIRECTORY}/mega-linter.log" && -d "${default_reports}" ]]; then
-	mv "${MEGALINT_WORKING_DIRECTORY}/mega-linter.log" "${default_reports}/"
-fi
+# Relocate reports regardless of lint outcome (parallels action.yml's
+# always()). A relocation failure must not mask the lint's exit code.
+bash /tmp/megalint-runner/.taskfiles/scripts/megalint-relocate-reports.sh \
+	"${MEGALINT_WORKING_DIRECTORY}" \
+	"${MEGALINT_WORKING_DIRECTORY}/megalinter-reports" \
+	"${MEGALINT_REPORTS_DIR}" ||
+	echo "WARNING: report relocation failed (rc=$?); preserving lint exit code" >&2
 
-# Then optionally relocate the whole reports-dir to a non-default target.
-# Guard with -d so a MegaLinter crash before reports were written doesn't
-# mask the original failure with a missing-source mv error.
-default_abs="$(realpath -m "${default_reports}")"
-target_abs="$(realpath -m "${MEGALINT_REPORTS_DIR}")"
-if [[ "${default_abs}" != "${target_abs}" && -d "${default_reports}" ]]; then
-	mkdir -p "$(dirname "${MEGALINT_REPORTS_DIR}")"
-	rm -rf "${MEGALINT_REPORTS_DIR}"
-	mv "${default_reports}" "${MEGALINT_REPORTS_DIR}"
-fi
+exit "${lint_rc}"

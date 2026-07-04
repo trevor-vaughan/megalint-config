@@ -1,7 +1,7 @@
 .runs[] | select(.tool.driver.name == $linter) |
 "# Linter: \(.tool.driver.name)\n\n**Total findings:** \(.results | length)\n\n---\n\n" +
-([.results | group_by(.locations[0].physicalLocation.artifactLocation.uri)[] |
-    "## File: \(.[0].locations[0].physicalLocation.artifactLocation.uri)\n\n" +
+([.results | group_by(.locations[0].physicalLocation.artifactLocation.uri // "(no location)")[] |
+    "## File: \(.[0].locations[0].physicalLocation.artifactLocation.uri // "(no location)")\n\n" +
     (map(
         "- **Line \(.locations[0].physicalLocation.region.startLine // "?")**" +
         " [\(.ruleId // "unknown")]" +

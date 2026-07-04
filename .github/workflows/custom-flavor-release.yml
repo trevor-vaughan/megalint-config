@@ -14,9 +14,10 @@ name: Custom Flavor Release
         default: ""
         type: string
 
-# Keep in sync with .taskfiles/megalint.yml MEGALINTER_IMAGE
+# Pin to the same version PR validation clones (.taskfiles/flavor.yml
+# MEGALINTER_VERSION). Bump both together to adopt a new upstream base.
 env:
-  DEFAULT_BASE_IMAGE: ghcr.io/oxsecurity/megalinter:v9
+  DEFAULT_BASE_IMAGE: ghcr.io/oxsecurity/megalinter:v9.6.0
 
 permissions:
   contents: write # gh release create
@@ -262,6 +263,9 @@ jobs:
         uses: ./
         with:
           validate-all-codebase: "true"
+          megalinter-image: megalinter-custom-flavor:test
+          pull-policy: never
+          verify: skip
 
       - name: Assemble image tags
         id: imagetags

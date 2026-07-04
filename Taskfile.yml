@@ -26,4 +26,6 @@ tasks:
 
   check:
     desc: Run all quality gates
-    deps: [test]
+    cmds:
+      - task: test
+      - task: dev:test:runner

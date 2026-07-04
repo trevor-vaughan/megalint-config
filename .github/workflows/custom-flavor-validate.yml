@@ -54,6 +54,8 @@ jobs:
 
       - name: Setup build environment
         uses: ./.github/actions/setup-build-env
+        with:
+          enable-bats: "false"
 
       - name: Sync dependencies
         run: task dev:sync
@@ -126,6 +128,7 @@ jobs:
         uses: ./.github/actions/setup-build-env
         with:
           enable-uv: "false"
+          enable-bats: "false"
 
       - name: Clone MegaLinter source
         run: task flavor:clone
@@ -154,8 +157,13 @@ jobs:
       - name: Validate artifact contents
         run: |
           echo "=== Validating artifact contents ==="
-          if [[ $(find ./custom-flavor -name "*/.." -o -name "../*" | wc -l) -gt 0 ]]; then
-            echo "Error: Suspicious paths found in artifact"
+          # Reject symlinks: a malicious artifact could point one outside the
+          # build context. (The previous basename-glob check on find -name
+          # was dead: -name only matches basenames, which never contain a
+          # slash, so a pattern intended to match a path segment never
+          # fires.)
+          if [ -n "$(find ./custom-flavor -type l)" ]; then
+            echo "Error: symlinks are not permitted in the flavor artifact"
             exit 1
           fi
           echo "Artifact contents validated"

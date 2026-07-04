@@ -62,7 +62,7 @@ ADDITIONAL_EXCLUDED_DIRECTORIES:
 # golangci-lint skips the module-root vendor/ natively via Go's ./... loading.
 # Consuming monorepos with vendored *nested* modules (sub/mod/vendor/) can add
 # their own paths in a repo-local override.
-FILTER_REGEX_EXCLUDE: '^vendor/'
+FILTER_REGEX_EXCLUDE: "^vendor/"
 
 # =============================================================================
 # Enabled Linters

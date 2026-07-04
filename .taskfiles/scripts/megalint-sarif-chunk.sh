@@ -77,7 +77,13 @@ if ((${#log_linters[@]} > 0)); then
 			printf -- '%s\n' "${description}"
 			printf -- '%s\n\n' "${docs_url}"
 			printf -- '---\n\n'
-			sed '1,/^-\{3,\}/d' "${logfile}"
+			if grep -qE '^-{3,}' "${logfile}"; then
+				sed '1,/^-\{3,\}/d' "${logfile}"
+			else
+				# No separator: lines 1-2 (description + docs URL) were already
+				# rendered above, so emit the remainder verbatim.
+				tail -n +3 "${logfile}"
+			fi
 		} >"${CHUNK_DIR}/${outname}.md"
 		echo "  Processing ${linter_key} (from log)..."
 	done

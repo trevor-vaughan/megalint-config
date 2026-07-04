@@ -19,9 +19,6 @@ logger = logging.getLogger(__name__)
 
 DESCRIPTOR_GLOB = "*.megalinter-descriptor.yml"
 
-# Minimum COPY instruction part count: COPY <from> <src> <dest>
-_MIN_COPY_PARTS = 3
-
 BASE_APK_PACKAGES = [
     "bash",
     "ca-certificates",
@@ -411,34 +408,20 @@ def _qualify_from_image(line: str) -> str:
     return f"{prefix}docker.io/{image}{rest}"
 
 
-def _qualify_from_lines(
-    from_lines: list[str],
-) -> list[str]:
-    """Qualify all FROM lines in a list."""
-    return [_qualify_from_image(line) for line in from_lines]
-
-
 def _dedup_copy_lines(
     copy_lines: list[str],
 ) -> list[str]:
-    """Deduplicate COPY instructions by source+destination.
+    """Deduplicate COPY instructions.
 
-    Uses the --from alias plus destination as the dedup key.
-    Two COPY lines from different stages to the same
-    directory are both kept; only exact duplicates
-    (same stage, same dest) are removed.
+    Only exact duplicates (same flags, same source(s), same
+    destination) are removed. Two COPY lines that differ in
+    source or destination are both kept, even from the same
+    stage.
     """
     seen: set[str] = set()
     result: list[str] = []
     for line in copy_lines:
-        effective = _effective_instruction(line)
-        from_match = re.search(
-            r"--from=(\S+)", effective,
-        )
-        parts = effective.split()
-        alias = from_match.group(1) if from_match else ""
-        dest = parts[-1] if len(parts) >= _MIN_COPY_PARTS else ""
-        key = f"{alias}:{dest}"
+        key = " ".join(_effective_instruction(line).split())
         if key in seen:
             continue
         seen.add(key)
@@ -466,7 +449,7 @@ def replace_section(
         re.DOTALL,
     )
     return pattern.sub(
-        rf"\g<1>{content}\g<2>",
+        lambda m: f"{m.group(1)}{content}{m.group(2)}",
         template,
     )
 
@@ -905,6 +888,7 @@ def write_flavor_config(
     output_dir: Path,
     flavor_name: str,
     linters: list[str],
+    version: str = "0.0.0",
 ) -> Path:
     """Write mega-linter-flavor.yml with flavor metadata.
 
@@ -912,6 +896,8 @@ def write_flavor_config(
         output_dir: Directory to write the config file.
         flavor_name: Name of the custom flavor.
         linters: List of enabled linter names.
+        version: Upstream MegaLinter version the flavor
+            was built against.
 
     Returns:
         Path to the written config file.
@@ -920,6 +906,7 @@ def write_flavor_config(
     output_dir.mkdir(parents=True, exist_ok=True)
     config = {
         "flavor": flavor_name,
+        "megalinter_version": version,
         "linters": sorted(linters),
     }
     config_path = output_dir / "mega-linter-flavor.yml"
@@ -951,6 +938,7 @@ def build_flavor(
     megalinter_src: str,
     output_dir: str,
     flavor_name: str = "custom",
+    version: str = "0.0.0",
 ) -> dict[str, Any]:
     """Orchestrate slim flavor generation.
 
@@ -963,6 +951,8 @@ def build_flavor(
         megalinter_src: Path to cloned MegaLinter source.
         output_dir: Directory for generated output.
         flavor_name: Name for the custom flavor.
+        version: Upstream MegaLinter version the flavor
+            was built against.
 
     Returns:
         Metadata dict with flavor_name, linters, and
@@ -994,7 +984,10 @@ def build_flavor(
     )
 
     write_flavor_config(
-        out_path, flavor_name, enabled_linters,
+        out_path,
+        flavor_name,
+        enabled_linters,
+        version=version,
     )
 
     logger.info(
@@ -1057,6 +1050,7 @@ def main():
             megalinter_src=args.megalinter_src,
             output_dir=args.output_dir,
             flavor_name=args.flavor_name,
+            version=args.version,
         )
         logger.info(
             "Flavor '%s' generated with %d linters",

@@ -67,6 +67,9 @@ _inject_sarif_fmt = (
 _qualify_from_image = (
     build_flavor_dockerfile._qualify_from_image  # noqa: SLF001 — test exercises private helper
 )
+_dedup_copy_lines = (
+    build_flavor_dockerfile._dedup_copy_lines  # noqa: SLF001 — test exercises private helper
+)
 SARIF_FMT_VERSION = (
     build_flavor_dockerfile.SARIF_FMT_VERSION
 )
@@ -537,6 +540,15 @@ class TestReplaceSection:
         assert "#APK__END" in result
         assert "old content" not in result
 
+    def test_preserves_regex_metacharacters(self):
+        template = "#OTHER__START\nPLACEHOLDER\n#OTHER__END"
+        content = "RUN grep -P '\\d+' file\nRUN echo done\\\n"
+        result = replace_section(template, "OTHER", content)
+        assert "grep -P '\\d+'" in result
+        assert result.startswith("#OTHER__START\n")
+        assert result.endswith("#OTHER__END")
+        assert "PLACEHOLDER" not in result
+
 
 # ── TestBuildApkSection ───────────────────────────
 
@@ -908,6 +920,22 @@ class TestWriteFlavorConfig:
             data = yaml.safe_load(f)
         assert len(data["linters"]) == 3  # noqa: PLR2004
 
+    def test_write_flavor_config_records_version(
+        self, tmp_path,
+    ):
+        out = write_flavor_config(
+            tmp_path,
+            "custom",
+            ["BASH_SHELLCHECK"],
+            version="9.6.0",
+        )
+        data = yaml.safe_load(
+            out.read_text(encoding="utf-8"),
+        )
+        assert data["megalinter_version"] == "9.6.0"
+        assert data["flavor"] == "custom"
+        assert data["linters"] == ["BASH_SHELLCHECK"]
+
 
 # ── TestCLIEntryPoint ────────────────────────────
 
@@ -1093,3 +1121,28 @@ class TestQualifyFromImage:
     def test_pure_variable_reference_unchanged(self):
         line = "FROM ${BASE_IMAGE} AS base"
         assert _qualify_from_image(line) == line
+
+
+# ── TestDedupCopyLines ────────────────────────────
+
+
+class TestDedupCopyLines:
+    """Tests for _dedup_copy_lines.
+
+    Only exact duplicate COPY instructions (same flags, same
+    source, same destination) may be removed. Two COPY lines
+    that share a stage and destination but copy different
+    sources must both be kept, otherwise a binary is silently
+    dropped.
+    """
+
+    def test_dedup_copy_lines_keeps_distinct_sources_same_dest(self):
+        lines = [
+            "COPY --from=stage /a /usr/bin/",
+            "COPY --from=stage /b /usr/bin/",
+            "COPY --from=stage /a /usr/bin/",  # true duplicate -> removed
+        ]
+        result = _dedup_copy_lines(lines)
+        assert "COPY --from=stage /a /usr/bin/" in result
+        assert "COPY --from=stage /b /usr/bin/" in result
+        assert len(result) == 2  # noqa: PLR2004

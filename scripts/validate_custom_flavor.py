@@ -110,6 +110,9 @@ def _validate_content(yaml_data: dict) -> None:
     flavor_config = (
         yaml_data.get("mega-linter-flavor.yml") or {}
     )
+    if not isinstance(flavor_config, dict):
+        msg = "mega-linter-flavor.yml must be a YAML mapping"
+        raise ValidationError(msg)
     if not flavor_config.get("flavor"):
         content_errors.append(
             "mega-linter-flavor.yml is missing"
@@ -325,21 +328,8 @@ def main():
             "Validated directory: %s", args.flavor_dir,
         )
         logger.info("Checks performed:")
-        for check, status in result["checks"].items():
-            check_name = check.replace("_", " ").title()
-            if status is True:
-                logger.info("   pass %s", check_name)
-            elif status is False:
-                logger.info("   fail %s", check_name)
-            else:
-                logger.info(
-                    "   skip %s (skipped)", check_name,
-                )
-
-        if result.get("warnings"):
-            logger.warning("Warnings:")
-            for warning in result["warnings"]:
-                logger.warning("   - %s", warning)
+        for check in result["checks"]:
+            logger.info("   pass %s", check.replace("_", " ").title())
 
         logger.info("All validation checks passed!")
 

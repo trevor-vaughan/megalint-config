@@ -365,18 +365,23 @@ recommended workflow.
 
 ## Continuous integration
 
-`.github/workflows/megalinter.yml` runs the same linter in CI on every push
-and on PRs targeting `main`. The workflow consumes the local composite
-action at `action.yml` — making the repo its own first consumer.
+`.github/workflows/megalinter.yml` runs the same linter in CI on PRs
+targeting `main` and on a weekly schedule. The workflow consumes the local
+composite action at `action.yml` — making the repo its own first consumer.
 
 The workflow:
 
-- Lints only the PR diff on pull requests (`validate-all-codebase: false`)
-  and the full tree on pushes to `main`.
+- Lints the diff on pull requests (`validate-all-codebase: false`) and the
+  full tree on the weekly schedule (`validate-all-codebase: true`), which
+  refreshes the Code Scanning baseline for `main`. There is no push trigger:
+  a feature-branch push is already covered by its pull request, and pushes to
+  `main` or tags would lint zero changed files (diff base == head).
 - Uploads `megalinter-reports/` (which contains `mega-linter.log`) as a
   workflow artifact for download.
 - Uploads the SARIF report to GitHub Code Scanning so findings appear in
-  the Security tab and as inline PR annotations.
+  the Security tab and as inline PR annotations, gated on the run's
+  `sarif-has-results` output (an empty-runs SARIF is rejected by the
+  upload API).
 - Verifies image attestations (SLSA provenance, SBOM, vulnerability
   scan, repository scan) via cosign and the GitHub CLI before running
   the linter.
@@ -410,16 +415,19 @@ jobs:
             ${{ steps.megalint.outputs.reports-dir }}
             mega-linter.log
 
+      # Gate on sarif-has-results: the upload API rejects a SARIF with an
+      # empty `runs` array, which happens when a changed-files run matches
+      # no lint-relevant files.
       - uses: github/codeql-action/upload-sarif@v4
-        if: ${{ success() || failure() }}
+        if: ${{ (success() || failure()) && steps.megalint.outputs.sarif-has-results == 'true' }}
         with:
           sarif_file: ${{ steps.megalint.outputs.sarif-file }}
 ```
 
 Inputs: `working-directory`, `validate-all-codebase`, `megalinter-image`,
 `reports-dir`, `pull-policy`, `verify`, `vuln-cache-dir`, `github-comment`,
-`timeout-minutes` (default 45). Outputs: `reports-dir`, `sarif-file`. See
-`action.yml` for defaults.
+`timeout-minutes` (default 45). Outputs: `reports-dir`, `sarif-file`,
+`sarif-has-results`. See `action.yml` for defaults.
 
 ### Using in a GitLab repo
 
