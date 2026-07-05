@@ -1,6 +1,16 @@
 # Checkov configuration for this repository.
 # Overrides the shared template from .mega-linter.d/.checkov.yml.
 
+# Frameworks skipped here scan remote VCS configuration over the GitHub API
+# (branch protection, org settings) rather than local files. Checkov persists
+# their responses to a transient conf dir under the working directory; because
+# MegaLinter mounts the workspace read-only, that persist crashes with EROFS
+# ("Read-only file system: '.megalinter_github_conf'"). The framework has no
+# bearing on linting this repo's local IaC, so skip it. See
+# .taskfiles/scripts/megalint-run.sh for the read-only mount rationale.
+skip-framework:
+  - github_configuration
+
 # Paths skipped here are generated or templated sources that should not
 # be scanned as deployable infrastructure.
 skip-path:

@@ -79,12 +79,15 @@ teardown() {
   [ "$status" -eq 2 ]
 }
 
-# Regression: Checkov 3.x's Github.setup_conf_dir() ignores
-# CKV_GITHUB_CONF_DIR_PATH and computes the path as os.path.join(os.getcwd(),
-# CKV_GITHUB_CONF_DIR_NAME). On a read-only workspace mount that lands the
-# directory on `/tmp/lint/github_conf` and crashes with EROFS. Passing
-# CKV_GITHUB_CONF_DIR_NAME as an absolute path exploits POSIX os.path.join
-# semantics to redirect the directory onto the writable tmpfs.
+# Regression: Checkov's github_configuration framework computes its conf dir
+# as os.path.join(os.getcwd(), CKV_GITHUB_CONF_DIR_NAME); on a read-only
+# workspace mount that crashes with EROFS. The primary fix is skipping that
+# framework in the Checkov config (see test_config_sanity.py); this env var is
+# a defence-in-depth backstop that redirects the dir onto the writable tmpfs
+# via POSIX os.path.join semantics (absolute second arg wins). It is defeated
+# on MegaLinter >= v9.6.0, whose CheckovLinter.before_lint_files() overwrites
+# CKV_GITHUB_CONF_DIR_NAME with a relative path, so the config skip carries the
+# pinned base image; the runner still forwards it for older images.
 @test "runner forwards CKV_GITHUB_CONF_DIR_NAME=/tmp/checkov-github-conf when apply_fixes=none" {
   run bash "${RUNNER}" \
     "${REPO_ROOT}" \

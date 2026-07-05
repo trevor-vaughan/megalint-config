@@ -25,6 +25,8 @@ BASE_CONFIG = REPO_ROOT / ".mega-linter.yml"
 CHANGED_CONFIG = REPO_ROOT / ".mega-linter.d" / ".mega-linter-changed.yml"
 LOCAL_CONFIG = REPO_ROOT / ".mega-linter.local.yml"
 JSCPD_CONFIG = REPO_ROOT / ".mega-linter.d" / ".jscpd.json"
+CHECKOV_ROOT_CONFIG = REPO_ROOT / ".checkov.yml"
+CHECKOV_SHARED_CONFIG = REPO_ROOT / ".mega-linter.d" / ".checkov.yml"
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +154,37 @@ def test_rust_clippy_removed_from_enabled_linters(base_config: dict):
     disable = validate_config.linter_list(base_config, "DISABLE_LINTERS")
     assert "RUST_CLIPPY" not in enable
     assert "RUST_CLIPPY" in disable
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    [CHECKOV_ROOT_CONFIG, CHECKOV_SHARED_CONFIG],
+    ids=["repo-root", "shared-template"],
+)
+def test_checkov_skips_github_configuration_framework(config_path: Path):
+    """Checkov must skip the github_configuration framework.
+
+    That framework scans GitHub org/branch-protection settings over the API
+    (checkov/github/), not local files, and persists them to a transient conf
+    dir resolved against the current working directory. MegaLinter runs Checkov
+    with the workspace mounted read-only (.taskfiles/scripts/megalint-run.sh),
+    so persist_all_confs() crashes with EROFS ("Read-only file system:
+    '.megalinter_github_conf'"). MegaLinter v9.6.0's
+    CheckovLinter.before_lint_files() overwrites the CKV_GITHUB_CONF_DIR_NAME
+    env var the runner injects to redirect that dir onto the tmpfs, defeating
+    the runner-level workaround, so the framework must be skipped in config.
+
+    Both the repo-root override and the shared template carry the skip: a
+    target repo (or this repo's release scan) that supplies its own
+    .checkov.yml replaces the template rather than merging with it, so the
+    skip has to be present in whichever file Checkov actually loads.
+    """
+    config = validate_config.load_config(config_path)
+    skipped = config.get("skip-framework") or []
+    assert "github_configuration" in skipped, (
+        f"{config_path.relative_to(REPO_ROOT)} must skip-framework"
+        " github_configuration to avoid the read-only-mount EROFS crash"
+    )
 
 
 def test_trufflehog_disables_verification(base_config: dict):
