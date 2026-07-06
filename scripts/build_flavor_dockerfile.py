@@ -709,6 +709,39 @@ def _inject_sarif_fmt(dockerfile: str) -> str:
     )
 
 
+# Exact Go ENV block from the upstream MegaLinter base Dockerfile
+# (line-continuation preserved). Injection anchor for GOTOOLCHAIN.
+GO_ENV_BLOCK = "ENV GOROOT=/usr/lib/go \\\n    GOPATH=/go"
+
+
+def _inject_gotoolchain(dockerfile: str) -> str:
+    """Force GOTOOLCHAIN=auto at the image level.
+
+    Alpine's go package defaults to GOTOOLCHAIN=local, which forbids
+    on-demand toolchain download and makes golangci-lint's typecheck
+    hard-fail on modules whose go.mod requires a newer Go
+    ("go.mod requires go >= X; GOTOOLCHAIN=local"). An image-level ENV
+    overrides that default (highest precedence short of a runtime -e)
+    and stays overridable by callers. Idempotent; raises if the Go ENV
+    block is missing so a template layout change fails the build loudly
+    instead of silently shipping without the fix.
+    """
+    if "ENV GOTOOLCHAIN=auto" in dockerfile:
+        return dockerfile
+    if GO_ENV_BLOCK not in dockerfile:
+        msg = (
+            "Go ENV block not found in Dockerfile template; cannot inject "
+            "GOTOOLCHAIN=auto. The upstream template layout changed — update "
+            "GO_ENV_BLOCK in build_flavor_dockerfile.py."
+        )
+        raise ValueError(msg)
+    return dockerfile.replace(
+        GO_ENV_BLOCK,
+        f"{GO_ENV_BLOCK}\nENV GOTOOLCHAIN=auto",
+        1,
+    )
+
+
 def _insert_healthcheck(dockerfile: str) -> str:
     """Insert a HEALTHCHECK before the first ENTRYPOINT.
 
@@ -847,6 +880,7 @@ def generate_dockerfile(
 
     # ── Extra tools (not from descriptors) ───────
     result = _inject_sarif_fmt(result)
+    result = _inject_gotoolchain(result)
 
     # Add COPY for flavor config file before ENTRYPOINT
     flavor_copy = (

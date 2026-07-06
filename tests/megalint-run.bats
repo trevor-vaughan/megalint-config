@@ -316,3 +316,56 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" == *"APPLY_FIXES"* && "$output" == *"MEGALINT_TMPDIR"* ]]
 }
+
+@test "runner forwards a MEGALINT_EXTRA_ENV_VARS name that is set" {
+  MEGALINT_EXTRA_ENV_VARS="GOPROXY" GOPROXY="https://proxy.example/mod" \
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" "none"
+
+  [ "$status" -eq 0 ]
+  grep -qE '^GOPROXY=https://proxy\.example/mod$' "${ENGINE_ARGS_FILE}"
+}
+
+@test "runner does not forward a listed extra var that is unset" {
+  MEGALINT_EXTRA_ENV_VARS="GOPROXY" \
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" "none"
+
+  [ "$status" -eq 0 ]
+  ! grep -qE '^GOPROXY=' "${ENGINE_ARGS_FILE}"
+}
+
+@test "runner handles empty MEGALINT_EXTRA_ENV_VARS as a no-op" {
+  MEGALINT_EXTRA_ENV_VARS="   " \
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" "none"
+
+  [ "$status" -eq 0 ]
+}
+
+@test "runner forwards multiple extra vars with mixed comma/space delimiters" {
+  MEGALINT_EXTRA_ENV_VARS="GOPROXY, GONOSUMCHECK" \
+  GOPROXY="https://proxy.example/mod" GONOSUMCHECK="1" \
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" "none"
+
+  [ "$status" -eq 0 ]
+  grep -qE '^GOPROXY=https://proxy\.example/mod$' "${ENGINE_ARGS_FILE}"
+  grep -qE '^GONOSUMCHECK=1$' "${ENGINE_ARGS_FILE}"
+}
+
+@test "runner skips an invalid MEGALINT_EXTRA_ENV_VARS entry without aborting" {
+  MEGALINT_EXTRA_ENV_VARS="GOPROXY=oops, GONOSUMCHECK" GONOSUMCHECK="1" \
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" "none"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ignoring invalid"* ]]
+  grep -qE '^GONOSUMCHECK=1$' "${ENGINE_ARGS_FILE}"
+  ! grep -q 'oops' "${ENGINE_ARGS_FILE}"
+}

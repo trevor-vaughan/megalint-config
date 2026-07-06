@@ -61,6 +61,13 @@
 #   GITHUB_TOKEN, VALIDATE_ALL_CODEBASE, DISABLE, DISABLE_LINTERS,
 #   GITHUB_REPOSITORY, GITHUB_RUN_ID, CI
 #                      Forwarded to the container when set on the host.
+#   MEGALINT_EXTRA_ENV_VARS
+#                      Whitespace/comma/newline-separated list of additional
+#                      host env var NAMES to forward into the container, on
+#                      top of the built-in allowlist below. Each name is
+#                      forwarded only when it is set in the host env (values
+#                      stay in the caller's control). Names only — no
+#                      NAME=VALUE pairs.
 #
 # The optional config_file argument (positional $7) sets MEGALINTER_CONFIG
 # inside the container, selecting an alternate MegaLinter configuration.
@@ -167,6 +174,34 @@ for var in "${FORWARDED_ENV_VARS[@]}"; do
 		env_args+=(-e "${var}=${!var}")
 	fi
 done
+
+# Caller-extensible allowlist. MEGALINT_EXTRA_ENV_VARS is a list of
+# additional variable NAMES (separated by whitespace, commas, or newlines)
+# to forward from the host environment. Same allowlist semantics as
+# FORWARDED_ENV_VARS above: a listed name is forwarded only when it is set
+# (non-empty) in the host env, so values stay in the caller's control and an
+# unset name is a safe no-op. This lets consumers pass e.g. GOPROXY /
+# GONOSUMCHECK, or override GOTOOLCHAIN, without editing this script or
+# inverting the allowlist to a denylist.
+if [[ -n "${MEGALINT_EXTRA_ENV_VARS:-}" ]]; then
+	# -d '' reads the whole (possibly multi-line) value; IFS splits it into
+	# names on commas and whitespace. read returns non-zero at EOF (no NUL
+	# delimiter present), which is expected here — hence `|| true`.
+	IFS=$', \t\n' read -r -d '' -a extra_env_names \
+		<<<"${MEGALINT_EXTRA_ENV_VARS}" || true
+	for var in "${extra_env_names[@]}"; do
+		[[ -n "${var}" ]] || continue
+		if [[ ! "${var}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+			echo "megalint-run.sh: ignoring invalid MEGALINT_EXTRA_ENV_VARS entry" \
+				"'${var}' (names only; NAME=VALUE pairs and shell-special" \
+				"characters are not allowed)" >&2
+			continue
+		fi
+		if [[ -n "${!var:-}" ]]; then
+			env_args+=(-e "${var}=${!var}")
+		fi
+	done
+fi
 
 # Set config file if provided
 if [[ -n "$config_file" ]]; then

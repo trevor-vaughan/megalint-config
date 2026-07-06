@@ -122,6 +122,25 @@ def test_check_task_runs_bats_runner():
     assert "test:runner" in wiring, "check must run the bats runner"
 
 
+def test_action_exposes_extra_env_vars_input():
+    action = _load(_ACTION)
+    assert "extra-env-vars" in action["inputs"]
+    assert action["inputs"]["extra-env-vars"]["required"] is False
+
+
+def test_run_step_exports_megalint_extra_env_vars():
+    action = _load(_ACTION)
+    run_steps = [
+        s
+        for s in action["runs"]["steps"]
+        if "Run MegaLinter" in s.get("name", "")
+    ]
+    assert run_steps, "Run MegaLinter step not found"
+    step = run_steps[0]
+    assert step["env"]["INPUT_EXTRA_ENV_VARS"] == "${{ inputs.extra-env-vars }}"
+    assert "MEGALINT_EXTRA_ENV_VARS" in step["run"]
+
+
 def test_relocate_step_does_not_mask_lint_result():
     action = _load(_ACTION)
     steps = action["runs"]["steps"]
