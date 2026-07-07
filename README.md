@@ -426,8 +426,20 @@ jobs:
 
 Inputs: `working-directory`, `validate-all-codebase`, `megalinter-image`,
 `reports-dir`, `pull-policy`, `verify`, `vuln-cache-dir`, `github-comment`,
-`timeout-minutes` (default 45). Outputs: `reports-dir`, `sarif-file`,
-`sarif-has-results`. See `action.yml` for defaults.
+`extra-env-vars`, `timeout-minutes` (default 45). Outputs: `reports-dir`,
+`sarif-file`, `sarif-has-results`. See `action.yml` for defaults.
+
+`extra-env-vars` lets you forward additional host environment variable
+**names** into the container on top of the built-in allowlist — whitespace-,
+comma-, or newline-separated (e.g. `GOPROXY GONOSUMCHECK`). Set the values
+themselves at the job or workflow level; only the listed names that are
+actually set are forwarded. Names only — `NAME=VALUE` pairs are intentionally
+unsupported so secrets stay out of workflow YAML.
+
+Go modules that require a newer Go than the image ships work out of the box:
+the flavor image defaults to `GOTOOLCHAIN=auto`, so golangci-lint fetches the
+required toolchain on demand. Override it (e.g. `GOTOOLCHAIN=local`) by adding
+`GOTOOLCHAIN` to `extra-env-vars` and setting it in your job env.
 
 ### Using in a GitLab repo
 

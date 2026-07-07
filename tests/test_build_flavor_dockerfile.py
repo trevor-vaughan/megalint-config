@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
 import yaml
 
 # Import the script under test using the same
@@ -63,6 +64,9 @@ build_flavor = (
 )
 _inject_sarif_fmt = (
     build_flavor_dockerfile._inject_sarif_fmt  # noqa: SLF001 — test exercises private helper
+)
+_inject_gotoolchain = (
+    build_flavor_dockerfile._inject_gotoolchain  # noqa: SLF001 — test exercises private helper
 )
 _qualify_from_image = (
     build_flavor_dockerfile._qualify_from_image  # noqa: SLF001 — test exercises private helper
@@ -680,6 +684,9 @@ MINIMAL_TEMPLATE = """\
 #FROM__START
 #FROM__END
 FROM oxsecurity/megalinter:v9
+# PATH for golang & python
+ENV GOROOT=/usr/lib/go \\
+    GOPATH=/go
 #ARG__START
 #ARG__END
 #APK__START
@@ -1146,3 +1153,33 @@ class TestDedupCopyLines:
         assert "COPY --from=stage /a /usr/bin/" in result
         assert "COPY --from=stage /b /usr/bin/" in result
         assert len(result) == 2  # noqa: PLR2004
+
+
+# ── TestInjectGotoolchain ─────────────────────────
+
+
+class TestInjectGotoolchain:
+    GO_ENV = (
+        "# PATH for golang & python\n"
+        "ENV GOROOT=/usr/lib/go \\\n"
+        "    GOPATH=/go\n"
+    )
+
+    def test_injects_gotoolchain_after_go_env_block(self):
+        dockerfile = f"FROM base\n{self.GO_ENV}RUN true\n"
+        result = _inject_gotoolchain(dockerfile)
+        assert "ENV GOTOOLCHAIN=auto" in result
+        assert result.index("GOPATH=/go") < result.index(
+            "ENV GOTOOLCHAIN=auto",
+        )
+
+    def test_is_idempotent(self):
+        dockerfile = f"FROM base\n{self.GO_ENV}RUN true\n"
+        once = _inject_gotoolchain(dockerfile)
+        twice = _inject_gotoolchain(once)
+        assert once == twice
+        assert twice.count("ENV GOTOOLCHAIN=auto") == 1
+
+    def test_raises_when_go_env_block_absent(self):
+        with pytest.raises(ValueError, match="Go ENV block not found"):
+            _inject_gotoolchain("FROM base\nRUN true\n")

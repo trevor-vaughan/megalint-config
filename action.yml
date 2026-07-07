@@ -63,6 +63,17 @@ inputs:
       external callers may not grant that permission.
     required: false
     default: "false"
+  extra-env-vars:
+    description: >-
+      Additional host environment variable NAMES to forward into the
+      MegaLinter container, on top of the built-in allowlist. Separate with
+      whitespace, commas, or newlines (e.g. "GOPROXY GONOSUMCHECK"). Each
+      named variable is forwarded only if it is set in the job/step
+      environment — set the values yourself at the job or workflow level;
+      this input only lists which names are allowed through. Names only;
+      NAME=VALUE pairs are not supported (keep secrets out of workflow YAML).
+    required: false
+    default: ""
   timeout-minutes:
     description: >-
       Maximum wall-clock minutes for the MegaLinter run before it is
@@ -130,6 +141,7 @@ runs:
         INPUT_VALIDATE_ALL: ${{ inputs.validate-all-codebase }}
         INPUT_VULN_CACHE: ${{ inputs.vuln-cache-dir }}
         INPUT_VERIFY: ${{ inputs.verify }}
+        INPUT_EXTRA_ENV_VARS: ${{ inputs.extra-env-vars }}
         GITHUB_COMMENT_REPORTER: ${{ inputs.github-comment }}
         INPUT_TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
       run: |
@@ -137,6 +149,10 @@ runs:
         # Expand ~ since env vars from inputs are literal strings
         vuln_cache="${INPUT_VULN_CACHE/#\~/$HOME}"
         export MEGALINT_VULN_CACHE="${vuln_cache}"
+
+        # Names-only allowlist extension; the runner forwards each listed
+        # var that is set in this step's (job-inherited) environment.
+        export MEGALINT_EXTRA_ENV_VARS="${INPUT_EXTRA_ENV_VARS}"
 
         # Composite-action steps do not support the native timeout-minutes key,
         # so bound the run with coreutils `timeout`. Validate the input is a

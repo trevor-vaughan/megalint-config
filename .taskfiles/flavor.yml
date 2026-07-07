@@ -141,11 +141,17 @@ tasks:
   smoke-test:
     desc: "Smoke-test an already-built custom flavor Docker image"
     summary: |
-      Runs three checks against a pre-built custom flavor image:
+      Runs five checks against a pre-built custom flavor image:
         1. Flavor config file exists at /megalinter-flavor.yml
         2. MegaLinter Python package imports successfully
         3. MegaLinter startup + flavor check passes against an empty workspace
            (catches MEGALINTER_FLAVOR registration errors like KeyError)
+        4. `go env GOTOOLCHAIN` is `auto` in the image (proves the baked-in
+           default really wins over Alpine's `local`, so golangci-lint can
+           fetch the toolchain a consumer's go.mod requires)
+        5. A runtime `-e GOTOOLCHAIN=local` overrides that default (proves the
+           value stays overridable — the payload the action's extra-env-vars
+           input delivers)
 
       Variables:
         MEGALINTER_IMAGE: Image reference to test (default: megalinter-local:v<MEGALINTER_VERSION>)
@@ -169,6 +175,27 @@ tasks:
           echo "FAIL: MegaLinter crashed with a Python traceback"
           exit 1
         fi
+      - |
+        # GOTOOLCHAIN must default to `auto` so golangci-lint can fetch the
+        # toolchain a consumer's go.mod requires. Alpine's go ships `local`;
+        # this proves the image ENV wins in the RUNNING container, not just in
+        # the generated Dockerfile text (tests/test_build_flavor_dockerfile.py).
+        GOTC="$({{.CONTAINER_ENGINE}} run --rm --entrypoint "" {{.MEGALINTER_IMAGE}} go env GOTOOLCHAIN)"
+        if [ "${GOTC}" != "auto" ]; then
+          echo "FAIL: image GOTOOLCHAIN is '${GOTC}', expected 'auto'"
+          exit 1
+        fi
+        echo "✓ GOTOOLCHAIN=auto in image"
+      - |
+        # And it stays overridable by a runtime -e — the exact payload the
+        # runner's MEGALINT_EXTRA_ENV_VARS / action's extra-env-vars deliver,
+        # so a caller can pin GOTOOLCHAIN=local.
+        GOTC="$({{.CONTAINER_ENGINE}} run --rm --entrypoint "" -e GOTOOLCHAIN=local {{.MEGALINTER_IMAGE}} go env GOTOOLCHAIN)"
+        if [ "${GOTC}" != "local" ]; then
+          echo "FAIL: -e GOTOOLCHAIN=local not honored (got '${GOTC}')"
+          exit 1
+        fi
+        echo "✓ GOTOOLCHAIN overridable via -e"
       - echo "Custom flavor Docker image {{.MEGALINTER_IMAGE}} is working correctly"
 
   clean:
