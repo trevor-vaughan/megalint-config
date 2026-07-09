@@ -25,7 +25,7 @@ task flavor:generate
 This creates a `./custom-flavor/` directory with all necessary files using default settings:
 - Configuration file: `.mega-linter.yml`
 - Flavor name: `shared-config`
-- Base image: derived from `MEGALINTER_IMAGE` (currently `v9`)
+- Base image: the upstream MegaLinter image at the pinned `MEGALINTER_VERSION` (default `9.6.0`), which the generator clones and extends
 
 ### Custom Configuration
 
@@ -35,8 +35,14 @@ Generate with specific parameters:
 task flavor:generate \
   CONFIG_FILE=my-config.yml \
   OUTPUT_DIR=./my-flavor \
-  FLAVOR_NAME=my-custom-flavor \
-  BASE_IMAGE=oxsecurity/megalinter:v9
+  FLAVOR_NAME=my-custom-flavor
+```
+
+To build against a different upstream MegaLinter version, set
+`MEGALINTER_VERSION` (it re-clones the pinned source the flavor extends):
+
+```bash
+task flavor:generate MEGALINTER_VERSION=9.6.0
 ```
 
 ### Validation and Testing
@@ -84,12 +90,12 @@ task flavor:test
 
 #### `flavor:generate`
 
-| Variable      | Default                         | Description                          |
-|---------------|---------------------------------|--------------------------------------|
-| `CONFIG_FILE` | `.mega-linter.yml`              | MegaLinter configuration file path   |
-| `OUTPUT_DIR`  | `./custom-flavor`               | Output directory for generated files |
-| `FLAVOR_NAME` | `shared-config`                 | Name of the custom flavor            |
-| `BASE_IMAGE`  | Derived from `MEGALINTER_IMAGE` | Base Docker image to extend          |
+| Variable             | Default            | Description                                                 |
+|----------------------|--------------------|-------------------------------------------------------------|
+| `CONFIG_FILE`        | `.mega-linter.yml` | MegaLinter configuration file path                          |
+| `OUTPUT_DIR`         | `./custom-flavor`  | Output directory for generated files                        |
+| `FLAVOR_NAME`        | `shared-config`    | Name of the custom flavor                                   |
+| `MEGALINTER_VERSION` | `9.6.0`            | Upstream MegaLinter version to clone and extend as the base |
 
 #### `flavor:validate`
 
@@ -151,7 +157,7 @@ custom-flavor/
 ### Dockerfile
 
 The generated Dockerfile:
-- Extends the specified base MegaLinter image
+- Extends the upstream MegaLinter base image at the pinned version
 - Installs only the required linters (reducing image size)
 - Copies linter configurations
 - Sets appropriate labels and metadata
@@ -276,12 +282,12 @@ task flavor:build \
 For enterprise deployment:
 
 ```bash
-# Generate with specific versioning
+# Generate with a pinned upstream version
 task flavor:generate \
   CONFIG_FILE=.mega-linter-enterprise.yml \
   FLAVOR_NAME=enterprise-standard \
   OUTPUT_DIR=./dist/enterprise-linter \
-  BASE_IMAGE=oxsecurity/megalinter:v9
+  MEGALINTER_VERSION=9.6.0
 
 # Validate
 task flavor:validate \
@@ -315,8 +321,8 @@ task flavor:generate OUTPUT_DIR=./custom-flavors/my-flavor
 
 **Error: "Unknown linter in ENABLE_LINTERS"**
 - Check linter name spelling against MegaLinter documentation
-- Verify linter is available in the base image version
-- Update base image: `BASE_IMAGE=oxsecurity/megalinter:latest`
+- Verify the linter exists in the pinned MegaLinter version
+- Change the pinned version to one that includes it: `task flavor:generate MEGALINTER_VERSION=<version>`
 
 #### Validation Failures
 
@@ -466,7 +472,7 @@ jobs:
 1. **Version your configurations** - Tag configuration changes
 2. **Test thoroughly** - Run `task flavor:validate` and `task flavor:build`
 3. **Document customizations** - Update flavor descriptions
-4. **Pin base images** - Specify exact MegaLinter versions
+4. **Pin the base version** - Set `MEGALINTER_VERSION` to an exact upstream version
 5. **Automate updates** - Use CI/CD for flavor regeneration
 6. **Share responsibly** - Review security implications before publishing
 

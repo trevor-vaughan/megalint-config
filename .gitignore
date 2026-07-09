@@ -17,6 +17,10 @@
 # Generated on every local or CI run; SARIF, logs, and per-linter reports.
 megalinter-reports/
 mega-linter.log
+# Transient config staged into the working tree during in-target runs; removed
+# on a clean/interrupted exit, but a SIGKILL bypasses the cleanup trap. Ignored
+# so a crash-leak never lands in git status or a commit.
+.mega-linter.shared.yml
 
 
 # -----------------------------------------------------------------------------

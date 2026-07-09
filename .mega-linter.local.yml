@@ -6,6 +6,11 @@
 #
 # Put repo-specific exclusions and overrides here. The shared config must
 # stay generic — it applies to every target the runner is pointed at.
+#
+# Local overrides are honoured on BOTH full runs and changed-files runs. On a
+# changed run the runner injects a reduced ENABLE_LINTERS (full minus
+# REPOSITORY_*) via env; this file remains the entry config, so its exclusions
+# and settings still apply.
 
 EXTENDS: .mega-linter.shared.yml
 

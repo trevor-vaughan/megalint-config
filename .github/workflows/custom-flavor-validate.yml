@@ -124,6 +124,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # Building the MegaLinter custom flavor (base image + bundled linters)
+      # produces many GB of layers and exhausts the ~14 GB free on a stock
+      # ubuntu-latest runner. Reclaim ~20+ GB by removing preinstalled
+      # runtimes and toolchains this job never uses. tool-cache is kept
+      # (action default) so setup-build-env's cached binaries survive.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+
       - name: Setup build environment
         uses: ./.github/actions/setup-build-env
         with:

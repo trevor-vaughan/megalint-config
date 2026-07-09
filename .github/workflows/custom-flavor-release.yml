@@ -48,6 +48,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # This job builds the custom flavor twice — a single-arch test image
+      # (load: true) and a multi-platform amd64+arm64 push — plus Trivy scans
+      # and a repo scan, easily exhausting the ~14 GB free on a stock
+      # ubuntu-latest runner. Reclaim ~20+ GB by removing preinstalled
+      # runtimes and toolchains this job never uses; tool-cache is kept
+      # (action default) so setup-uv/setup-task binaries survive.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+
       - name: Verify actor has write access
         env:
           GH_TOKEN: ${{ github.token }}
@@ -288,6 +297,16 @@ jobs:
             fi
             echo "TAGS_EOF"
           } >> "$GITHUB_OUTPUT"
+
+      # `load: true` in the test build left a second copy of the image in the
+      # Docker image store, on top of the layers BuildKit keeps in its own
+      # cache. Smoke test, Trivy scans, and repo scan are done, so drop that
+      # image-store copy (~several GB) before the multi-platform push. This
+      # does not touch the BuildKit cache, so step 2 still reuses amd64 from
+      # it — only the redundant copy is freed. Best-effort: a reclaim failure
+      # must not fail the release.
+      - name: Reclaim test image before multi-platform build
+        run: docker image rm megalinter-custom-flavor:test || true
 
       - name: Push multi-platform image
         id: build

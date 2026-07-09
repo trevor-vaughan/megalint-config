@@ -71,8 +71,9 @@ FILTER_REGEX_EXCLUDE: "^vendor/"
 # =============================================================================
 # Enabled Linters
 # =============================================================================
-# SYNC: when adding or removing linters below, also update the ENABLE_LINTERS
-# list in .mega-linter.d/.mega-linter-changed.yml (minus REPOSITORY_* entries).
+# Changed-files runs derive their linter set from this list automatically
+# (full minus REPOSITORY_*, via .taskfiles/scripts/changed-enable-linters.sh),
+# so there is no separate list to keep in sync.
 
 ENABLE_LINTERS:
   # ---------------------------------------------------------------------------
@@ -206,6 +207,18 @@ DISABLE_LINTERS:
 # Python: Comprehensive ruff rule selection
 PYTHON_RUFF_ARGUMENTS:
   - "--select=E,W,F,I,N,UP,YTT,BLE,B,A,COM,C4,DTZ,T10,DJ,EM,EXE,ICN,G,INP,PIE,T20,PT,Q,RSE,RET,SLF,SIM,TID,TCH,INT,ARG,PTH,TD,FIX,ERA,PD,PGH,PL,TRY,FLY,NPY,PERF,FURB,LOG,RUF"
+
+# Go: emit findings to stdout as well as SARIF. SARIF_REPORTER makes MegaLinter
+# run golangci-lint with `--output.sarif.path <file>`. In golangci-lint v2,
+# naming an explicit output path REPLACES the default text formatter, so every
+# per-issue detail lands only in the SARIF file and stdout is empty — which
+# MegaLinter's TextReporter renders as a blank "--Error detail:" block that
+# reads as truncated CI output. Adding an explicit text->stdout formatter
+# restores the console detail; the injected SARIF path still writes the report
+# (both formats co-emit, verified against golangci-lint v2.11.4).
+GO_GOLANGCI_LINT_ARGUMENTS:
+  - "--output.text.path"
+  - "stdout"
 
 # SQLFluff: a SQL dialect is mandatory — sqlfluff hard-errors without one.
 # Default to `ansi` (the portable lowest common denominator) so the shared base

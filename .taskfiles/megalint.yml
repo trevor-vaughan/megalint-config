@@ -43,11 +43,13 @@ tasks:
       MEGALINTER_IMAGE: '{{.MEGALINTER_IMAGE | default "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"}}'
       VALIDATE_ALL_CODEBASE: '{{.VALIDATE_ALL_CODEBASE | default ""}}'
       CONFIG_FILE: '{{.CONFIG_FILE | default ""}}'
+      ENABLE_LINTERS: '{{.ENABLE_LINTERS | default ""}}'
     # VALIDATE_ALL_CODEBASE is forwarded as an env var because the runner
     # script checks for it. Other common vars (TARGET, APPLY_FIXES,
     # PULL_POLICY) are defined at the top level and accessible to all tasks.
     env:
       VALIDATE_ALL_CODEBASE: "{{.VALIDATE_ALL_CODEBASE}}"
+      ENABLE_LINTERS: "{{.ENABLE_LINTERS}}"
     cmds:
       # Chunk the SARIF for LLM-driven remediation after every run. `defer`
       # runs regardless of the lint result, so findings stay processable
@@ -65,12 +67,18 @@ tasks:
         "{{.CONFIG_FILE}}"
 
   changed:
-    desc: "Run MegaLinter only on files changed vs. the default branch (HEAD diff). Excludes repository-scoped linters. Honours TARGET, APPLY_FIXES, PULL_POLICY."
+    desc: "Run MegaLinter only on files changed vs. the default branch (HEAD diff). Strips repository-scoped linters (derived from .mega-linter.yml). Honours TARGET, APPLY_FIXES, PULL_POLICY, and .mega-linter.local.yml."
+    vars:
+      # Derive full minus REPOSITORY_* from the shared config and inject it as
+      # ENABLE_LINTERS. Using the normal entry (local -> shared) means
+      # .mega-linter.local.yml is honoured on changed runs too.
+      ENABLE_LINTERS_CHANGED:
+        sh: bash "{{.TASKFILE_DIR}}/scripts/changed-enable-linters.sh" "{{.ROOT_DIR}}/.mega-linter.yml"
     cmds:
       - task: run
         vars:
           VALIDATE_ALL_CODEBASE: "false"
-          CONFIG_FILE: ".mega-linter-changed.yml"
+          ENABLE_LINTERS: "{{.ENABLE_LINTERS_CHANGED}}"
 
   sarif-open:
     desc: "Filter SARIF report to only include runs with findings (honours TARGET)"

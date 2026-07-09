@@ -10,6 +10,10 @@ clone-free unit gate.
 import importlib.util
 import json
 import re
+import subprocess
+import sys
+import types
+import uuid
 from pathlib import Path
 
 import pytest
@@ -22,11 +26,33 @@ validate_config = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(validate_config)
 
 BASE_CONFIG = REPO_ROOT / ".mega-linter.yml"
-CHANGED_CONFIG = REPO_ROOT / ".mega-linter.d" / ".mega-linter-changed.yml"
 LOCAL_CONFIG = REPO_ROOT / ".mega-linter.local.yml"
 JSCPD_CONFIG = REPO_ROOT / ".mega-linter.d" / ".jscpd.json"
+MARKDOWNLINT_CONFIG = REPO_ROOT / ".mega-linter.d" / ".markdownlint.json"
 CHECKOV_ROOT_CONFIG = REPO_ROOT / ".checkov.yml"
 CHECKOV_SHARED_CONFIG = REPO_ROOT / ".mega-linter.d" / ".checkov.yml"
+EXTRACTOR = REPO_ROOT / ".taskfiles" / "scripts" / "changed-enable-linters.sh"
+MEGALINTER_CONFIG_PY = (
+    REPO_ROOT / ".cache" / "megalinter-v9.6.0" / "megalinter" / "config.py"
+)
+
+
+def _load_megalinter_config():
+    """Load the pinned MegaLinter config module in isolation.
+
+    Importing `megalinter.config` normally triggers megalinter/__init__.py and
+    pulls in the full linter runtime (many unvendored deps). config.py itself
+    needs only stdlib + PyYAML + `requests`. The caller stubs `requests`
+    (config.py uses it solely for remote `EXTENDS: https://...` configs, which
+    the local-file tests here never exercise). This mirrors the importlib
+    isolation this file already uses for the repo's own scripts.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "_megalinter_config", MEGALINTER_CONFIG_PY,
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 # ---------------------------------------------------------------------------
@@ -37,11 +63,6 @@ CHECKOV_SHARED_CONFIG = REPO_ROOT / ".mega-linter.d" / ".checkov.yml"
 @pytest.fixture(scope="module")
 def base_config() -> dict:
     return validate_config.load_config(BASE_CONFIG)
-
-
-@pytest.fixture(scope="module")
-def changed_config() -> dict:
-    return validate_config.load_config(CHANGED_CONFIG)
 
 
 @pytest.fixture(scope="module")
@@ -93,33 +114,24 @@ def test_no_enable_disable_overlap(base_config: dict):
     assert validate_config.enable_disable_overlap(enable, disable) == []
 
 
-def test_changed_override_extends_base(changed_config: dict):
-    assert validate_config.extends_errors(
-        changed_config, BASE_CONFIG.name,
-    ) == []
+def _extractor_linters() -> list[str]:
+    out = subprocess.check_output(
+        ["bash", str(EXTRACTOR), str(BASE_CONFIG)], text=True,
+    ).strip()
+    return out.split(",")
 
 
-def test_changed_override_preserves_invariant(
-    base_config: dict,
-    changed_config: dict,
-):
-    """Override must equal base minus REPOSITORY_* — no leak, none missing."""
+def test_extractor_matches_base_minus_repository(base_config: dict):
+    """The awk extractor must equal a PyYAML parse of ENABLE_LINTERS minus
+    REPOSITORY_* — the guard that a future reformat can't silently misfire."""
     enable = validate_config.linter_list(base_config, "ENABLE_LINTERS")
-    changed_enable = validate_config.linter_list(
-        changed_config, "ENABLE_LINTERS",
-    )
-    assert validate_config.override_invariant_errors(
-        enable, changed_enable,
-    ) == []
+    got = _extractor_linters()
+    assert validate_config.override_invariant_errors(enable, got) == []
 
 
-def test_changed_override_has_no_repository_linters(changed_config: dict):
-    changed_enable = validate_config.linter_list(
-        changed_config, "ENABLE_LINTERS",
-    )
+def test_extractor_output_has_no_repository_linters():
     leaked = [
-        k
-        for k in changed_enable
+        k for k in _extractor_linters()
         if k.startswith(validate_config.REPOSITORY_PREFIX)
     ]
     assert leaked == []
@@ -187,6 +199,57 @@ def test_checkov_skips_github_configuration_framework(config_path: Path):
     )
 
 
+def test_markdownlint_shared_config_disables_line_length():
+    """MD013 (line-length) is off in the shared markdownlint config.
+
+    Hard-wrapped prose is noise in an agent-authored docs world: tools emit
+    whole paragraphs on one line, and enforcing an 80/100-column limit adds
+    churn with no reader benefit (it was the alignment cousin MD060 that first
+    surfaced this file's need). MegaLinter loads a repo's own `.markdownlint.json`
+    INSTEAD of its bundled TEMPLATES/.markdownlint.json — the descriptor
+    registers a single config_file_name and the file REPLACES rather than merges
+    — so the disable has to live here to take effect.
+    """
+    config = json.loads(MARKDOWNLINT_CONFIG.read_text())
+    assert config.get("MD013") is False
+
+
+def test_markdownlint_shared_config_relaxes_heading_rules():
+    """Duplicate/first-line/single-H1 heading rules are relaxed for generated docs.
+
+    LLM-authored docs reuse section names ("Usage", "Example", "Options") under
+    unrelated parents, lead with badges or tables rather than a top-level
+    heading, and legitimately carry several H1 sections. `siblings_only` keeps
+    MD024 catching TRUE duplicate headings within one section while allowing the
+    cross-section reuse; MD041 (first-line-heading) and MD025 (single-title) are
+    off.
+    """
+    config = json.loads(MARKDOWNLINT_CONFIG.read_text())
+    assert config.get("MD024") == {"siblings_only": True}
+    assert config.get("MD041") is False
+    assert config.get("MD025") is False
+
+
+def test_markdownlint_shared_config_preserves_template_disables():
+    """The shared config re-declares MegaLinter's own template disables.
+
+    MegaLinter stages its bundled TEMPLATES/.markdownlint.json to the workspace
+    root ONLY when the repo supplies none; a repo-provided `.markdownlint.json`
+    replaces it wholesale (markdownlint does not merge configs). So every rule
+    the v9.6.0 template turned off — unordered-list-style (MD004),
+    ordered-list-prefix (MD029), inline HTML (MD033), emphasis-as-heading
+    (MD036) and the blank-line group — plus its MD007 indent must be repeated
+    here, or those rules silently switch back on and flood existing docs.
+    """
+    config = json.loads(MARKDOWNLINT_CONFIG.read_text())
+    assert config.get("MD004") is False
+    assert config.get("MD029") is False
+    assert config.get("MD033") is False
+    assert config.get("MD036") is False
+    assert config.get("blank_lines") is False
+    assert config.get("MD007") == {"indent": 2}
+
+
 def test_trufflehog_disables_verification(base_config: dict):
     """CI-safe default: TruffleHog must not verify results.
 
@@ -244,12 +307,78 @@ def test_trufflehog_removes_only_verified(base_config: dict):
     assert "--only-verified" in remove_args
 
 
+def test_golangci_lint_emits_text_alongside_sarif(base_config: dict):
+    """golangci-lint must print findings to stdout, not only into the SARIF file.
+
+    MegaLinter runs golangci-lint with `--output.sarif.path <file>` because
+    SARIF_REPORTER is on. In golangci-lint v2, naming an explicit
+    `--output.<format>.path` REPLACES the default text formatter instead of
+    adding to it, so every per-issue detail is written only to the SARIF file
+    and stdout is empty. MegaLinter's TextReporter then surfaces that empty
+    stdout as a blank `--Error detail:` block, which reads as truncated CI
+    output even though nothing was truncated.
+
+    Re-adding an explicit text->stdout formatter restores the human-readable
+    console detail; the injected SARIF path still writes the report (both
+    formats co-emit, verified against golangci-lint v2.11.4). The value is a
+    two-token list so MegaLinter passes it as two argv elements.
+    """
+    args = base_config.get("GO_GOLANGCI_LINT_ARGUMENTS", [])
+    assert args == ["--output.text.path", "stdout"]
+
+
 def test_local_override_extends_shared_config():
     """The repo-local override inherits from the staged shared config name."""
     local = validate_config.load_config(LOCAL_CONFIG)
     assert validate_config.extends_errors(
         local, ".mega-linter.shared.yml",
     ) == []
+
+
+@pytest.mark.skipif(
+    not MEGALINTER_CONFIG_PY.exists(),
+    reason="pinned MegaLinter source absent (run task flavor:clone)",
+)
+def test_env_enable_linters_wins_over_local_chain(tmp_path, monkeypatch):
+    # config.py imports `requests` only for remote `EXTENDS: https://...`
+    # configs, which this local-file test never exercises. Stub it via
+    # monkeypatch so the import succeeds without depending on requests being
+    # installed, and so the stub is restored after the test.
+    monkeypatch.setitem(sys.modules, "requests", types.ModuleType("requests"))
+    config = _load_megalinter_config()
+
+    (tmp_path / ".mega-linter.shared.yml").write_text(
+        "ENABLE_LINTERS:\n"
+        "  - BASH_SHELLCHECK\n"
+        "  - PYTHON_RUFF\n"
+        "  - REPOSITORY_CHECKOV\n"
+        "ADDITIONAL_EXCLUDED_DIRECTORIES:\n"
+        "  - node_modules\n",
+    )
+    (tmp_path / ".mega-linter.local.yml").write_text(
+        "EXTENDS: .mega-linter.shared.yml\n"
+        "CONFIG_PROPERTIES_TO_APPEND:\n"
+        "  - ADDITIONAL_EXCLUDED_DIRECTORIES\n"
+        "ADDITIONAL_EXCLUDED_DIRECTORIES:\n"
+        "  - custom-flavor\n",
+    )
+
+    request_id = str(uuid.uuid4())
+    config.init_config(
+        request_id,
+        str(tmp_path),
+        {
+            "MEGALINTER_CONFIG": ".mega-linter.local.yml",
+            "ENABLE_LINTERS": "BASH_SHELLCHECK,PYTHON_RUFF",
+        },
+    )
+    enable = config.get_list(request_id, "ENABLE_LINTERS")
+    excluded = config.get_list(request_id, "ADDITIONAL_EXCLUDED_DIRECTORIES")
+
+    assert set(enable) == {"BASH_SHELLCHECK", "PYTHON_RUFF"}
+    assert "REPOSITORY_CHECKOV" not in enable
+    assert "custom-flavor" in excluded  # local override survived
+    assert "node_modules" in excluded   # shared base survived
 
 
 # ---------------------------------------------------------------------------
@@ -300,26 +429,6 @@ def test_base_config_filter_regex_excludes_root_vendor_only(base_config: dict):
     assert not compiled.search("docs/vendor.md")
 
 
-def test_changed_config_inherits_vendor_exclusion(
-    base_config: dict,
-    changed_config: dict,
-):
-    """The changed-files override must not shadow the base's vendor regex.
-
-    It EXTENDS the base (scalars inherited, lists replaced). It deliberately
-    replaces ENABLE_LINTERS but must leave FILTER_REGEX_EXCLUDE inherited so
-    changed-files runs still skip the module-root vendor tree.
-    """
-    effective = changed_config.get(
-        "FILTER_REGEX_EXCLUDE",
-        base_config.get("FILTER_REGEX_EXCLUDE"),
-    )
-    assert effective is not None
-    compiled = re.compile(effective)
-    assert compiled.search("vendor/modules.txt")
-    assert not compiled.search("my/pkg/vendor/bobs_burgers.go")
-
-
 def test_jscpd_ignores_root_vendor_only():
     """COPYPASTE_JSCPD is project-mode: it walks the tree itself and ignores
     the MegaLinter file list, so vendor needs a native ignore glob. It is
@@ -362,19 +471,6 @@ def test_all_enabled_keys_are_installable(
     enable = validate_config.linter_list(base_config, "ENABLE_LINTERS")
     assert validate_config.uninstallable_linter_keys(
         enable, descriptor_ids,
-    ) == []
-
-
-@pytest.mark.integration
-def test_changed_override_keys_are_installable(
-    changed_config: dict,
-    descriptor_ids: set[str],
-):
-    changed_enable = validate_config.linter_list(
-        changed_config, "ENABLE_LINTERS",
-    )
-    assert validate_config.uninstallable_linter_keys(
-        changed_enable, descriptor_ids,
     ) == []
 
 

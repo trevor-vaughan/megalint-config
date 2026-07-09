@@ -7,9 +7,6 @@ Structural (no MegaLinter source required)
     - Every config file parses as a YAML mapping.
     - ENABLE_LINTERS / DISABLE_LINTERS contain no duplicates.
     - A linter is never both enabled and disabled.
-    - The changed-files override (.mega-linter-changed.yml) preserves the
-      documented invariant: EXTENDS the base and enables exactly the base's
-      linters minus the REPOSITORY_* entries (no leak, nothing missing).
 
 Descriptor-backed (requires the pinned MegaLinter source clone)
     - Every enabled/disabled key is a real linter key accepted by MegaLinter
@@ -306,9 +303,9 @@ def override_invariant_errors(
     base_enable: list[str],
     override_enable: list[str],
 ) -> list[str]:
-    """Check the changed-files override preserves the documented invariant.
+    """Check a reduced linter list equals the base minus REPOSITORY_*.
 
-    The override must enable exactly the base linters minus REPOSITORY_*
+    Changed-files runs enable exactly the base linters minus REPOSITORY_*
     (which are skipped in changed-files mode). Any REPOSITORY_* leak, missing
     base linter, or stray extra linter is an error.
     """
@@ -359,7 +356,6 @@ def extends_errors(config: dict[str, Any], expected: str) -> list[str]:
 
 def _collect_errors(
     base_path: Path,
-    changed_path: Path | None,
     descriptors_dir: Path | None,
 ) -> list[str]:
     """Run every applicable check and return the aggregated error list."""
@@ -410,12 +406,6 @@ def _collect_errors(
             " Run 'task flavor:clone' for full checks.",
         )
 
-    if changed_path is not None:
-        changed = load_config(changed_path)
-        errors.extend(extends_errors(changed, base_path.name))
-        changed_enable = linter_list(changed, "ENABLE_LINTERS")
-        errors.extend(override_invariant_errors(enable, changed_enable))
-
     return errors
 
 
@@ -433,11 +423,6 @@ def main() -> None:
         help="Base MegaLinter config (default: .mega-linter.yml)",
     )
     parser.add_argument(
-        "--changed",
-        default=".mega-linter.d/.mega-linter-changed.yml",
-        help="Changed-files override config to cross-check against the base",
-    )
-    parser.add_argument(
         "--descriptors-dir",
         default=None,
         help="MegaLinter descriptors dir (default: auto-discover under .cache)",
@@ -445,9 +430,6 @@ def main() -> None:
     args = parser.parse_args()
 
     base_path = Path(args.base_config)
-    changed_path = Path(args.changed) if args.changed else None
-    if changed_path is not None and not changed_path.exists():
-        changed_path = None
 
     descriptors_dir = (
         Path(args.descriptors_dir)
@@ -456,7 +438,7 @@ def main() -> None:
     )
 
     try:
-        errors = _collect_errors(base_path, changed_path, descriptors_dir)
+        errors = _collect_errors(base_path, descriptors_dir)
     except ConfigError:
         logger.exception("Configuration error")
         sys.exit(1)

@@ -5,12 +5,12 @@
 # Caller usage in their own .gitlab-ci.yml:
 #
 #   include:
-#     - remote: 'https://raw.githubusercontent.com/trevor-vaughan/megalint-config/v1/ci/gitlab/megalint.yml'
+#     - remote: 'https://raw.githubusercontent.com/trevor-vaughan/megalint-config/latest/ci/gitlab/megalint.yml'
 #
 #   megalint:
 #     extends: .megalint
 #     variables:
-#       MEGALINT_REF: 'v1'   # MUST match the ref in include: above
+#       MEGALINT_REF: 'latest'   # MUST match the ref in include: above
 #       # Optional: cache via GitLab Dependency Proxy
 #       MEGALINTER_IMAGE: '${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/trevor-vaughan/megalinter-custom-flavor:latest'
 #
@@ -30,7 +30,7 @@
     MEGALINT_VERIFY: ""
     # Pin to match the include: ref. Override in the caller if the
     # include ref differs.
-    MEGALINT_REF: "v1"
+    MEGALINT_REF: "latest"
     DOCKER_HOST: "tcp://docker:2375"
     DOCKER_TLS_CERTDIR: ""
   before_script:
