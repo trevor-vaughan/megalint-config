@@ -116,7 +116,9 @@ teardown() {
   ! grep -qE '^CKV_GITHUB_CONF_DIR_PATH=' "${ENGINE_ARGS_FILE}"
 }
 
-@test "config_file takes precedence over .mega-linter.local.yml" {
+@test "config_file arg wins over a present .mega-linter.local.yml" {
+  # A local override is present, yet the explicit config_file arg must be the
+  # single MEGALINTER_CONFIG (runner logs "ignoring .mega-linter.local.yml").
   touch "${TARGET}/.mega-linter.local.yml"
   run bash "${RUNNER}" \
     "${REPO_ROOT}" \
@@ -125,14 +127,13 @@ teardown() {
     "fake/image:latest" \
     "none" \
     "never" \
-    ".mega-linter-changed.yml"
+    ".mega-linter-custom.yml"
 
   [ "$status" -eq 0 ]
-  # Only one MEGALINTER_CONFIG should appear (the explicit one, not local.yml)
   local count
   count=$(grep -c '^MEGALINTER_CONFIG=' "${ENGINE_ARGS_FILE}" || true)
   [ "$count" -eq 1 ]
-  grep -qE '^MEGALINTER_CONFIG=\.mega-linter-changed\.yml$' "${ENGINE_ARGS_FILE}"
+  grep -qE '^MEGALINTER_CONFIG=\.mega-linter-custom\.yml$' "${ENGINE_ARGS_FILE}"
 }
 
 @test "handles empty CONFIG_FILE parameter correctly" {
@@ -368,4 +369,138 @@ EOF
   [[ "$output" == *"ignoring invalid"* ]]
   grep -qE '^GONOSUMCHECK=1$' "${ENGINE_ARGS_FILE}"
   ! grep -q 'oops' "${ENGINE_ARGS_FILE}"
+}
+
+@test "runner forwards ENABLE_LINTERS when set" {
+  ENABLE_LINTERS="BASH_SHELLCHECK,PYTHON_RUFF" \
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" "none"
+
+  [ "$status" -eq 0 ]
+  grep -qE '^ENABLE_LINTERS=BASH_SHELLCHECK,PYTHON_RUFF$' "${ENGINE_ARGS_FILE}"
+}
+
+@test "runner does not forward ENABLE_LINTERS when unset" {
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" "none"
+
+  [ "$status" -eq 0 ]
+  ! grep -qE '^ENABLE_LINTERS=' "${ENGINE_ARGS_FILE}"
+}
+
+@test "runner logs the ENABLE_LINTERS override when set" {
+  ENABLE_LINTERS="BASH_SHELLCHECK,PYTHON_RUFF" \
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" "none"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ENABLE_LINTERS override active: BASH_SHELLCHECK,PYTHON_RUFF"* ]]
+}
+
+# --- Changed-run FILTER_REGEX_EXCLUDE injection (excluded-dir workaround) ---
+
+# A fake `uv` that prints a canned regex, standing in for the resolver so these
+# tests exercise the runner's wiring, not PyYAML. Selected via MEGALINT_UV.
+_make_fake_uv() {  # $1 = string to print (may be empty)
+  cat > "${STUB_DIR}/fake-uv" <<EOF
+#!/usr/bin/env bash
+printf '%s' '${1}'
+[ -n '${1}' ] && printf '\n'
+exit 0
+EOF
+  chmod +x "${STUB_DIR}/fake-uv"
+  export MEGALINT_UV="${STUB_DIR}/fake-uv"
+}
+
+@test "changed run injects FILTER_REGEX_EXCLUDE from the resolver" {
+  _make_fake_uv '(^|/)(?:custom-flavor)/'
+  VALIDATE_ALL_CODEBASE=false run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" "fake/image:latest" "none"
+  [ "$status" -eq 0 ]
+  grep -qF 'FILTER_REGEX_EXCLUDE=(^|/)(?:custom-flavor)/' "${ENGINE_ARGS_FILE}"
+}
+
+@test "full run does NOT inject FILTER_REGEX_EXCLUDE" {
+  _make_fake_uv '(^|/)(?:custom-flavor)/'
+  # VALIDATE_ALL_CODEBASE unset -> full run -> resolver not called.
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" "fake/image:latest" "none"
+  [ "$status" -eq 0 ]
+  ! grep -qE '^FILTER_REGEX_EXCLUDE=' "${ENGINE_ARGS_FILE}"
+}
+
+@test "changed run with empty resolver output injects nothing" {
+  _make_fake_uv ''
+  VALIDATE_ALL_CODEBASE=false run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" "fake/image:latest" "none"
+  [ "$status" -eq 0 ]
+  ! grep -qE '^FILTER_REGEX_EXCLUDE=' "${ENGINE_ARGS_FILE}"
+}
+
+@test "changed run fails loudly when uv is absent" {
+  export MEGALINT_UV="${BATS_TEST_TMPDIR}/definitely-not-uv"
+  VALIDATE_ALL_CODEBASE=false run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" "fake/image:latest" "none"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not found on PATH"* ]]
+}
+
+# Records the resolver's argv so we can assert entry/base selection per target
+# layout. Prints a canned regex so injection still happens.
+_make_recording_uv() {
+  export UV_ARGS_FILE="${BATS_TEST_TMPDIR}/uv-args"
+  cat > "${STUB_DIR}/fake-uv" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "${UV_ARGS_FILE}"
+printf '(^|/)(?:x)/\n'
+EOF
+  chmod +x "${STUB_DIR}/fake-uv"
+  export MEGALINT_UV="${STUB_DIR}/fake-uv"
+}
+
+@test "changed run with a local override resolves staged local as entry and staged shared as base" {
+  _make_recording_uv
+  printf 'EXTENDS: .mega-linter.shared.yml\n' > "${TARGET}/.mega-linter.local.yml"
+  VALIDATE_ALL_CODEBASE=false run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" "fake/image:latest" "none"
+  [ "$status" -eq 0 ]
+  # In-target mode: workspace == TARGET. Entry = staged local; base = staged shared.
+  grep -qF "${TARGET}/.mega-linter.local.yml" "${UV_ARGS_FILE}"
+  grep -qF "${TARGET}/.mega-linter.shared.yml" "${UV_ARGS_FILE}"
+  grep -qF 'FILTER_REGEX_EXCLUDE=(^|/)(?:x)/' "${ENGINE_ARGS_FILE}"
+}
+
+@test "changed run with explicit config_file skips the excluded-dirs workaround" {
+  _make_recording_uv
+  printf 'ADDITIONAL_EXCLUDED_DIRECTORIES: [foo]\n' > "${TARGET}/.mega-linter-custom.yml"
+  VALIDATE_ALL_CODEBASE=false run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" "fake/image:latest" \
+    "none" "never" ".mega-linter-custom.yml"
+  [ "$status" -eq 0 ]
+  # config_file is a full-custom config whose EXTENDS chain we don't resolve, so
+  # the workaround is skipped: resolver never invoked, nothing injected (which
+  # avoids clobbering a FILTER_REGEX_EXCLUDE the config inherits via EXTENDS).
+  [ ! -f "${UV_ARGS_FILE}" ]
+  ! grep -qE '^FILTER_REGEX_EXCLUDE=' "${ENGINE_ARGS_FILE}"
+}
+
+@test "changed run aborts when the resolver exits non-zero" {
+  # Fake uv that fails, simulating a resolver error. set -e + the declaration-
+  # split assignment (never `local x=$(...)`) must abort rather than proceed
+  # with no exclusion — the silent-false-green mode this feature prevents.
+  cat > "${STUB_DIR}/fake-uv" <<'EOF'
+#!/usr/bin/env bash
+echo "resolver boom" >&2
+exit 1
+EOF
+  chmod +x "${STUB_DIR}/fake-uv"
+  export MEGALINT_UV="${STUB_DIR}/fake-uv"
+  VALIDATE_ALL_CODEBASE=false run bash "${RUNNER}" \
+    "${REPO_ROOT}" "${TARGET}" "${STUB_DIR}/fake-engine" "fake/image:latest" "none"
+  [ "$status" -ne 0 ]
+  # Aborted before the container ran: the fake engine never wrote its args file.
+  [ ! -f "${ENGINE_ARGS_FILE}" ]
 }

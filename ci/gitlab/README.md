@@ -9,12 +9,12 @@ Add to your project's `.gitlab-ci.yml`:
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/trevor-vaughan/megalint-config/v1/ci/gitlab/megalint.yml'
+  - remote: 'https://raw.githubusercontent.com/trevor-vaughan/megalint-config/latest/ci/gitlab/megalint.yml'
 
 megalint:
   extends: .megalint
   variables:
-    MEGALINT_REF: 'v1'
+    MEGALINT_REF: 'latest'
     # Optional: cache via GitLab Dependency Proxy
     MEGALINTER_IMAGE: '${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/trevor-vaughan/megalinter-custom-flavor:latest'
   rules:
@@ -38,7 +38,7 @@ expose to the running job which ref the included file came from.
 | `MEGALINTER_IMAGE`               | `ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest` | Container image to run.                           |
 | `MEGALINT_REPORTS_DIR`           | `$CI_PROJECT_DIR/megalinter-reports`                     | Where reports land on host.                       |
 | `MEGALINT_PULL_POLICY`           | `missing`                                                | Engine `--pull=` policy.                          |
-| `MEGALINT_REF`                   | `v1`                                                     | Ref of trevor-vaughan/megalint-config to clone.   |
+| `MEGALINT_REF`                   | `latest`                                                 | Ref of trevor-vaughan/megalint-config to clone.   |
 | `MEGALINT_VERIFY`                | `''`                                                     | Set to `skip` to bypass attestation verification. |
 
 ## Manual verification

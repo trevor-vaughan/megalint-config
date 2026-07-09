@@ -20,15 +20,15 @@ projects can share one linting policy.
 
 ## What's in here
 
-| Path                                           | Purpose                                                                                                                                                             |
-|------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `.mega-linter.yml`                             | The shared MegaLinter profile. Linters enabled, disabled, and configured.                                                                                           |
-| `.mega-linter.d/`                              | Drop-in directory for shared sub-configs (`.devskim.json`, `.jscpd.json`, `.grype.yaml`, …). Anything here is auto-mounted into target repos at the workspace root. |
-| `Taskfile.yml`                                 | Top-level task entrypoint.                                                                                                                                          |
-| `.taskfiles/megalint.yml`                      | Tasks for running MegaLinter locally.                                                                                                                               |
-| `.taskfiles/scripts/megalint-run.sh`           | The linter runner. Bind-mounts target + shared configs into the container.                                                                                          |
-| `.taskfiles/scripts/megalinter-sarif-chunk.sh` | Splits SARIF into per-linter markdown for LLM-driven remediation.                                                                                                   |
-| `.github/workflows/megalinter.yml`             | CI workflow that runs MegaLinter on every push and PR.                                                                                                              |
+| Path                                           | Purpose                                                                                                                                                                                                                                           |
+|------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `.mega-linter.yml`                             | The shared MegaLinter profile. Linters enabled, disabled, and configured.                                                                                                                                                                         |
+| `.mega-linter.d/`                              | Drop-in directory for shared sub-configs (`.markdownlint.json`, `.devskim.json`, `.jscpd.json`, `.grype.yaml`, …). Anything here is auto-mounted into target repos at the workspace root, unless the target already supplies a file of that name. |
+| `Taskfile.yml`                                 | Top-level task entrypoint.                                                                                                                                                                                                                        |
+| `.taskfiles/megalint.yml`                      | Tasks for running MegaLinter locally.                                                                                                                                                                                                             |
+| `.taskfiles/scripts/megalint-run.sh`           | The linter runner. Bind-mounts target + shared configs into the container.                                                                                                                                                                        |
+| `.taskfiles/scripts/megalinter-sarif-chunk.sh` | Splits SARIF into per-linter markdown for LLM-driven remediation.                                                                                                                                                                                 |
+| `.github/workflows/megalinter.yml`             | CI workflow that runs MegaLinter on every push and PR.                                                                                                                                                                                            |
 
 > **Note — KICS removed for supply-chain safety.** `REPOSITORY_KICS` was
 > dropped from the shared profile after a reported upstream supply-chain
@@ -84,16 +84,16 @@ task
 # Lint this repo's working tree
 task megalint:run
 
-# Lint only files changed vs. the default branch (HEAD diff)
-# Automatically uses .mega-linter-changed.yml override config that disables
-# repository-scoped linters for faster feedback during development
+# Lint only files changed vs. the default branch (HEAD diff). Repository-scoped
+# linters (Checkov, Trivy, secret scanners, ...) are stripped for faster
+# feedback; your .mega-linter.local.yml overrides — including
+# ADDITIONAL_EXCLUDED_DIRECTORIES — still apply. This path shells out to `uv`
+# to derive the directory exclusions, so `uv` must be on PATH (the GitHub
+# Action installs it automatically; GitLab CI uses the full `megalint:run`).
 task megalint:changed
 
 # Lint a different repo using these shared configs
 task megalint:run TARGET=/path/to/other/repo
-
-# Use specific override config
-task megalint:run TARGET=/path/to/other/repo CONFIG_FILE=".mega-linter-changed.yml"
 
 # From outside this repo
 task -d /path/to/this/repo megalint:run TARGET=$PWD
@@ -244,7 +244,7 @@ action. Pass `verify: skip` to the action input to bypass verification
 (useful when bootstrapping before the first attested image is published):
 
 ```yaml
-- uses: trevor-vaughan/megalint-config@v1
+- uses: trevor-vaughan/megalint-config@latest # zizmor: ignore[unpinned-uses]
   with:
     verify: skip
 ```
@@ -266,45 +266,42 @@ found (unless the image is `ghcr.io/trevor-vaughan/*`).
 
 This runner supports **MegaLinter config inheritance** using the `EXTENDS` directive to reduce maintenance overhead.
 
-### Override Configs
+### Changed-files mode
 
-The `.mega-linter.d/` directory contains drop-in override configurations:
+`task megalint:changed` lints only the files changed vs. the default branch and
+skips repository-scoped linters (Checkov, DevSkim, Grype, Betterleaks,
+Secretlint, Trivy, TruffleHog) — they scan the whole repo regardless of the
+changed set, so they add no incremental value on a per-PR run.
 
-- `.mega-linter-changed.yml` - Optimized config for changed-files mode that disables resource-intensive repository-scoped linters
+There is no separate changed-files config file. The reduced linter set is
+derived at run time from `.mega-linter.yml` by
+`.taskfiles/scripts/changed-enable-linters.sh` (the enabled linters minus the
+`REPOSITORY_*` entries) and injected as an `ENABLE_LINTERS` environment
+variable, which MegaLinter merges last so it wins over the config chain. Because
+the normal config entry is still used, a target's `.mega-linter.local.yml`
+overrides continue to apply on changed runs.
 
-### Usage
+### Creating a custom linter set
 
-Override configs are automatically copied to the target workspace root and can be referenced by filename:
-
-```bash
-# Use specific override config
-task megalint:run CONFIG_FILE=".mega-linter-changed.yml"
-
-# The megalint:changed task automatically uses the changed-files override
-task megalint:changed
-```
-
-### Creating Custom Overrides
-
-Create new override configs in `.mega-linter.d/` using the EXTENDS pattern:
+A target repo customises linting by shipping its own `.mega-linter.local.yml`
+that extends the shared config (see "Per-target overrides" below). To change the
+enabled set, replace `ENABLE_LINTERS` wholesale — `DISABLE_LINTERS` does NOT work
+for linters already in the parent's `ENABLE_LINTERS` (MegaLinter checks
+`ENABLE_LINTERS` first and never evaluates `DISABLE_LINTERS` for them):
 
 ```yaml
-EXTENDS: .mega-linter.yml
-# Replace ENABLE_LINTERS to remove unwanted linters.
-# DISABLE_LINTERS does NOT work for linters in the parent's ENABLE_LINTERS
-# (MegaLinter checks ENABLE_LINTERS first and never evaluates DISABLE_LINTERS
-# for linters already in that list).
+EXTENDS: .mega-linter.shared.yml
 ENABLE_LINTERS:
   - LINTER_ONE
   - LINTER_TWO
 ```
 
-CI validates the shared config and the changed-files override on every change
-(`tests/test_config_sanity.py`, run via `task dev:test:config`): every
-enabled/disabled key must be a real MegaLinter linter that our slim flavor can
-install, and `.mega-linter-changed.yml` must stay in sync with the base
-(exactly the base linters minus the `REPOSITORY_*` entries). Run it locally
-with `task flavor:clone && task dev:test:config`.
+CI validates the shared config on every change (`tests/test_config_sanity.py`,
+run via `task dev:test:config`): every enabled/disabled key must be a real
+MegaLinter linter our slim flavor can install, and the changed-files extractor's
+output is pinned to `.mega-linter.yml` minus the `REPOSITORY_*` entries so a
+reformat can't silently change it. Run it locally with
+`task flavor:clone && task dev:test:config`.
 
 ## Per-target overrides
 
@@ -403,7 +400,7 @@ jobs:
         with: { fetch-depth: 0 }
 
       - id: megalint
-        uses: trevor-vaughan/megalint-config@v1
+        uses: trevor-vaughan/megalint-config@latest # zizmor: ignore[unpinned-uses]
         with:
           validate-all-codebase: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
@@ -449,12 +446,12 @@ Short form:
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/trevor-vaughan/megalint-config/v1/ci/gitlab/megalint.yml'
+  - remote: 'https://raw.githubusercontent.com/trevor-vaughan/megalint-config/latest/ci/gitlab/megalint.yml'
 
 megalint:
   extends: .megalint
   variables:
-    MEGALINT_REF: 'v1'
+    MEGALINT_REF: 'latest'
     # Optional: cache via GitLab Dependency Proxy
     MEGALINTER_IMAGE: '${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/trevor-vaughan/megalinter-custom-flavor:latest'
 ```

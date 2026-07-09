@@ -1,0 +1,73 @@
+---
+name: Update Latest Tag
+
+# yamllint disable-line rule:truthy
+on:
+  release:
+    types: [published]
+  # Backfill entry point: point `latest` at the newest stable release when a
+  # release already exists but no `latest` tag has been created yet.
+  workflow_dispatch:
+
+# Pushing a tag ref requires write access to repository contents.
+permissions:
+  contents: write
+
+# Serialize so two near-simultaneous releases cannot race the tag update.
+# Never cancel an in-flight run: dropping it would leave `latest` stale.
+concurrency:
+  group: update-latest-tag
+  cancel-in-progress: false
+
+jobs:
+  update-latest-tag:
+    name: Point latest at newest release
+    runs-on: ubuntu-latest
+    # Move `latest` only for stable releases. A manual dispatch resolves the
+    # newest stable release itself, so it always proceeds.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.release.prerelease == false
+    permissions:
+      contents: write
+    steps:
+      - name: Move latest tag to newest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          # Determine which release tag `latest` should follow.
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            # GitHub's "latest release" excludes drafts and pre-releases, which
+            # is exactly the stable release we want to backfill onto.
+            source_tag="$(gh api "repos/${REPO}/releases/latest" --jq '.tag_name')"
+          else
+            source_tag="${RELEASE_TAG}"
+          fi
+
+          if [ -z "${source_tag}" ] || [ "${source_tag}" = "latest" ]; then
+            echo "No usable source release tag ('${source_tag}'); refusing to move latest." >&2
+            exit 1
+          fi
+
+          # Resolve the release tag to the commit it points at. The commits
+          # endpoint dereferences annotated tags, so this works whether the
+          # release tag is lightweight or annotated.
+          commit_sha="$(gh api "repos/${REPO}/commits/${source_tag}" --jq '.sha')"
+          echo "Pointing 'latest' at ${source_tag} (${commit_sha})."
+
+          # Move the tag if it already exists, create it otherwise. The 404 from
+          # the existence probe is expected control flow, not a failure to hide.
+          if gh api "repos/${REPO}/git/ref/tags/latest" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/${REPO}/git/refs/tags/latest" \
+              -f "sha=${commit_sha}" -F "force=true" >/dev/null
+            echo "Updated existing 'latest' tag."
+          else
+            gh api --method POST "repos/${REPO}/git/refs" \
+              -f "ref=refs/tags/latest" -f "sha=${commit_sha}" >/dev/null
+            echo "Created 'latest' tag."
+          fi

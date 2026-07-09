@@ -35,6 +35,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # Pulling the full MegaLinter image to dogfood the repo consumes many
+      # GB and can exhaust the ~14 GB free on a stock ubuntu-latest runner.
+      # Reclaim ~20+ GB by removing preinstalled runtimes and toolchains this
+      # job never uses; tool-cache is kept (action default).
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+
       - name: Compute cache week
         id: week
         shell: bash

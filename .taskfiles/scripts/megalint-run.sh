@@ -53,12 +53,14 @@
 #
 # Environment variables:
 #   MEGALINT_TMPDIR    Any non-empty value selects tempdir staging.
+#   MEGALINT_UV        uv binary used on the changed-files path to run the
+#                      FILTER_REGEX_EXCLUDE resolver. Defaults to `uv`.
 #   MEGALINT_VULN_CACHE
 #                      Host path for persistent vulnerability-DB cache.
 #                      Bind-mounted at /tmp/xdg-cache inside the container.
 #                      Defaults to ${XDG_CACHE_HOME:-$HOME/.cache}/megalint/vuln-db.
 #                      Set to empty string to disable (old ephemeral behavior).
-#   GITHUB_TOKEN, VALIDATE_ALL_CODEBASE, DISABLE, DISABLE_LINTERS,
+#   GITHUB_TOKEN, VALIDATE_ALL_CODEBASE, ENABLE_LINTERS, DISABLE, DISABLE_LINTERS,
 #   GITHUB_REPOSITORY, GITHUB_RUN_ID, CI
 #                      Forwarded to the container when set on the host.
 #   MEGALINT_EXTRA_ENV_VARS
@@ -146,6 +148,10 @@ fi
 FORWARDED_ENV_VARS=(
 	GITHUB_TOKEN
 	VALIDATE_ALL_CODEBASE
+	# Changed-files runs inject a reduced ENABLE_LINTERS (full minus
+	# REPOSITORY_*) as an env var; MegaLinter merges it last so it wins over
+	# the file/EXTENDS chain (see changed-enable-linters.sh).
+	ENABLE_LINTERS
 	DISABLE
 	DISABLE_LINTERS
 	GITHUB_REPOSITORY
@@ -174,6 +180,12 @@ for var in "${FORWARDED_ENV_VARS[@]}"; do
 		env_args+=(-e "${var}=${!var}")
 	fi
 done
+
+# Surface the effective linter override so a "why didn't Checkov run on my PR"
+# question is answerable from the log without a changed-config file to read.
+if [[ -n "${ENABLE_LINTERS:-}" ]]; then
+	echo "ENABLE_LINTERS override active: ${ENABLE_LINTERS}" >&2
+fi
 
 # Caller-extensible allowlist. MEGALINT_EXTRA_ENV_VARS is a list of
 # additional variable NAMES (separated by whitespace, commas, or newlines)
@@ -288,6 +300,17 @@ gh_group "Stage shared configs into workspace"
 # if the target already supplies a file, the shared copy is NOT staged
 # over it. This is unconditional — a 0-byte file is treated as the
 # user's choice, not a phantom to overwrite.
+#
+# Effective entry/base configs for the changed-run FILTER_REGEX_EXCLUDE
+# derivation below. Read from the STAGED workspace — the ground truth of what
+# MegaLinter loads — so the runner's "target wins" staging (a target that
+# supplies its own .mega-linter.shared.yml / .mega-linter.yml) is respected and
+# tempdir vs in-target staging is irrelevant. Kept in lockstep with the staging
+# decisions in this same chain. The resolver runs after this block, so every
+# ${workspace} path referenced here exists.
+entry_config="${workspace}/.mega-linter.yml"
+base_config=""
+
 if [[ -n "$config_file" ]]; then
 	# Explicit config file takes precedence; stage base config for EXTENDS.
 	if [[ -f "${workspace}/.mega-linter.local.yml" ]]; then
@@ -296,13 +319,26 @@ if [[ -n "$config_file" ]]; then
 	if [[ ! -e "${workspace}/.mega-linter.yml" ]]; then
 		stage_in "${shared}/.mega-linter.yml" "${workspace}/.mega-linter.yml"
 	fi
+	# config_file is a full-custom escape hatch whose EXTENDS chain we do not
+	# resolve. A partial injected FILTER_REGEX_EXCLUDE could DROP a value the
+	# config inherits via EXTENDS (env replaces the file value), so the
+	# changed-run workaround is SKIPPED entirely for config_file (see the
+	# `-z "${config_file}"` gate on the injection block below). Its owner
+	# controls FILTER_REGEX_EXCLUDE. entry_config/base_config are left at their
+	# defaults here and go unused on this path.
 elif [[ -f "${workspace}/.mega-linter.local.yml" ]]; then
 	if [[ ! -e "${workspace}/.mega-linter.shared.yml" ]]; then
 		stage_in "${shared}/.mega-linter.yml" "${workspace}/.mega-linter.shared.yml"
 	fi
 	env_args+=(-e "MEGALINTER_CONFIG=.mega-linter.local.yml")
+	# base is the file actually staged (runner's copy, or the target's own if it
+	# supplied one) — exactly what local EXTENDS.
+	entry_config="${workspace}/.mega-linter.local.yml"
+	base_config="${workspace}/.mega-linter.shared.yml"
 elif [[ ! -e "${workspace}/.mega-linter.yml" ]]; then
 	stage_in "${shared}/.mega-linter.yml" "${workspace}/.mega-linter.yml"
+	entry_config="${workspace}/.mega-linter.yml"
+	base_config=""
 fi
 
 # Sub-configs from .mega-linter.d/: target wins. Any existing file at
@@ -321,6 +357,38 @@ done
 shopt -u nullglob dotglob
 
 gh_endgroup
+
+# Changed-files runs (VALIDATE_ALL_CODEBASE=false) build their file list from
+# `git diff`, which MegaLinter does NOT prune with ADDITIONAL_EXCLUDED_DIRECTORIES
+# (that only prunes the full-codebase os.walk). MegaLinter DOES honor
+# FILTER_REGEX_EXCLUDE on both paths, so derive a combined FILTER_REGEX_EXCLUDE
+# from the effective config's excluded dirs and inject it. Env wins over the
+# file/EXTENDS chain, so the resolver folds in the existing value. MEGALINT_UV
+# overrides the uv binary (tests point it at a stub).
+#
+# WORKAROUND for https://github.com/oxsecurity/megalinter/issues/8360: remove
+# this block and scripts/changed_filter_regex.py once the upstream fix ships in
+# a MegaLinter release the custom flavor pins.
+if [[ "${VALIDATE_ALL_CODEBASE:-}" == "false" && -z "${config_file}" ]]; then
+	uv_bin="${MEGALINT_UV:-uv}"
+	if ! command -v "${uv_bin}" >/dev/null 2>&1; then
+		echo "megalint-run.sh: '${uv_bin}' not found on PATH — the changed-files" \
+			"path needs uv to derive FILTER_REGEX_EXCLUDE from" \
+			"ADDITIONAL_EXCLUDED_DIRECTORIES. Install uv or set MEGALINT_UV." >&2
+		exit 1
+	fi
+	# Declaration split from assignment so a non-zero resolver exit trips
+	# `set -e` instead of being swallowed (never `local x=$(...)` here).
+	changed_filter_regex=""
+	changed_filter_regex="$("${uv_bin}" run --frozen --project "${shared}" \
+		python "${shared}/scripts/changed_filter_regex.py" \
+		"${entry_config}" ${base_config:+"${base_config}"})"
+	if [[ -n "${changed_filter_regex}" ]]; then
+		env_args+=(-e "FILTER_REGEX_EXCLUDE=${changed_filter_regex}")
+		echo "FILTER_REGEX_EXCLUDE override active (changed-run excluded dirs):" \
+			"${changed_filter_regex}" >&2
+	fi
+fi
 
 # Mount strategy.
 if [[ "${apply_fixes}" == "none" ]]; then

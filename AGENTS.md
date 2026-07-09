@@ -117,9 +117,15 @@ When modifying MegaLinter behavior:
 4. **Test config inheritance** with `task megalint:run CONFIG_FILE="your-config.yml"`
 5. **Document purpose** clearly in override config comments
 
-### Available Overrides
+### Changed-files mode
 
-- `.mega-linter-changed.yml` - Replaces `ENABLE_LINTERS` with all REPOSITORY-scoped linters removed for faster changed-files analysis
+Changed-files runs (`task megalint:changed`) derive their linter set at run time
+— `.taskfiles/scripts/changed-enable-linters.sh` strips `REPOSITORY_*` from
+`.mega-linter.yml`'s `ENABLE_LINTERS` and injects it as an `ENABLE_LINTERS` env
+var. There is no committed changed-files config: add or remove a linter in
+`.mega-linter.yml` and the changed set follows automatically. A PyYAML-backed
+test pins the extractor output, so a reformat of `.mega-linter.yml` that breaks
+the extractor fails CI.
 
 ### Override Config Template
 
