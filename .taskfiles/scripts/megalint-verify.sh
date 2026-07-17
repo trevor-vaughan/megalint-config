@@ -29,6 +29,11 @@
 #   MEGALINT_VERIFY        Set to "skip" to bypass verification entirely.
 #   MEGALINT_VERIFY_STRICT Set to "true" to hard-fail on any image
 #                          (not just trevor-vaughan images).
+#   MEGALINT_VERIFY_ATTEMPTS     Attempts per network-dependent verification
+#                                before it is treated as failed (default 3).
+#                                Guards against transient registry/API/Sigstore
+#                                blips spuriously failing a valid image.
+#   MEGALINT_VERIFY_RETRY_DELAY  Seconds between attempts (default 3).
 #
 # Exit codes:
 #   0  All verifications passed (or skipped/warned)
@@ -83,6 +88,40 @@ if [[ "${has_cosign}" == "false" ]]; then
 	fi
 fi
 
+# ── Retry wrapper for network-dependent verification ────────────────
+# cosign verify-attestation and gh attestation verify both reach the
+# network (registry, GitHub Artifact Attestation API, Sigstore). A
+# transient blip there would otherwise hard-fail a first-party image
+# (is_strict → exit 1) even though the attestations are valid — the
+# spurious failure this guards against. Retry a bounded number of times
+# with a short delay, and on the FINAL failure surface the captured
+# output (previously discarded to /dev/null, which left genuine failures
+# undiagnosable). Both knobs are overridable via env for tests.
+readonly VERIFY_ATTEMPTS="${MEGALINT_VERIFY_ATTEMPTS:-3}"
+readonly VERIFY_RETRY_DELAY="${MEGALINT_VERIFY_RETRY_DELAY:-3}"
+
+verify_with_retry() {
+	local label="$1"
+	shift
+	local out="" rc=0 n=1
+	while :; do
+		# Capture combined output. `|| rc=$?` keeps set -e from aborting on
+		# the expected non-zero attempts and preserves the command's real
+		# exit code (an if/fi around it would reset $? to 0).
+		out="$("$@" 2>&1)" && return 0 || rc=$?
+		if ((n >= VERIFY_ATTEMPTS)); then
+			# Final attempt failed: surface the real error instead of hiding it.
+			if [[ -n "${out}" ]]; then
+				printf '%s\n' "${out}" | sed 's/^/      /' >&2
+			fi
+			return "${rc}"
+		fi
+		echo "  RETRY ${label}: transient failure (attempt ${n}/${VERIFY_ATTEMPTS}), retrying…" >&2
+		n=$((n + 1))
+		sleep "${VERIFY_RETRY_DELAY}"
+	done
+}
+
 # ── Cosign-verified attestation types ───────────────────────────────
 # These are attested via `cosign attest` in the release pipeline,
 # which writes OCI attestations to the container registry.  All three
@@ -108,13 +147,16 @@ readonly CERT_OIDC_ISSUER='https://token.actions.githubusercontent.com'
 failures=0
 for name in "${!COSIGN_ATTESTATIONS[@]}"; do
 	predicate="${COSIGN_ATTESTATIONS[$name]}"
-	if cosign verify-attestation \
+	# shellcheck disable=SC2310  # verify_with_retry returns the command's own
+	# exit code; consuming it in this if to count a failure is the intended
+	# control flow, so the set -e suppression SC2310 warns about is safe.
+	if verify_with_retry "${name}" cosign verify-attestation \
 		--insecure-ignore-tlog=true \
 		--use-signed-timestamps \
 		--certificate-identity-regexp="${CERT_IDENTITY_RE}" \
 		--certificate-oidc-issuer="${CERT_OIDC_ISSUER}" \
 		--type="${predicate}" \
-		"${IMAGE}" >/dev/null 2>&1; then
+		"${IMAGE}"; then
 		echo "  PASS  ${name}"
 	else
 		echo "  FAIL  ${name} (${predicate})"
@@ -137,9 +179,12 @@ if [[ "${has_gh}" == "true" && "${IMAGE}" == ghcr.io/* ]]; then
 	# so we skip it entirely for non-GHCR images.
 	image_owner="${IMAGE#ghcr.io/}"
 	image_owner="${image_owner%%/*}"
-	if gh attestation verify \
+	# shellcheck disable=SC2310  # verify_with_retry returns the command's own
+	# exit code; consuming it here to count a failure is the intended control
+	# flow, so the set -e suppression SC2310 warns about is safe.
+	if verify_with_retry "SLSA provenance" gh attestation verify \
 		"oci://${IMAGE}" \
-		--owner "${image_owner}" >/dev/null 2>&1; then
+		--owner "${image_owner}"; then
 		echo "  PASS  SLSA provenance (gh attestation verify)"
 	else
 		echo "  FAIL  SLSA provenance (gh attestation verify)"

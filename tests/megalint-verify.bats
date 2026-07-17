@@ -43,11 +43,16 @@ STUB
 
   # Ensure no real cosign/gh interferes
   export PATH="${STUB_DIR}:${PATH}"
+
+  # Keep retry backoff out of the test wall-clock; retry COUNTS still apply.
+  export MEGALINT_VERIFY_RETRY_DELAY=0
 }
 
 teardown() {
   rm -rf "${BATS_TEST_TMPDIR}"
   unset MEGALINT_VERIFY MEGALINT_VERIFY_STRICT
+  unset MEGALINT_VERIFY_ATTEMPTS MEGALINT_VERIFY_RETRY_DELAY
+  unset GH_FAIL_UNTIL GH_COUNT_FILE COSIGN_FAIL_UNTIL COSIGN_COUNT_FILE
 }
 
 # --- MEGALINT_VERIFY=skip ---
@@ -182,6 +187,77 @@ STUB
   export STUB_GH_EXIT=1
   run bash "${VERIFY}" "ghcr.io/oxsecurity/megalinter:v9"
   [ "$status" -eq 0 ]
+}
+
+# --- Retry on transient network failures (surfaced, bounded) ---------------
+# gh attestation verify and cosign verify-attestation hit the network (GitHub
+# API, Sigstore, registry). A transient blip must NOT hard-fail a first-party
+# release, and a genuine failure must surface its reason instead of vanishing
+# into /dev/null — which is what made a real incident undiagnosable.
+
+@test "transient gh failure retries then passes" {
+  cat > "${STUB_DIR}/gh" <<'STUB'
+#!/usr/bin/env bash
+echo "$@" >> "${GH_CALLS_FILE}"
+n=$(( $(cat "${GH_COUNT_FILE}" 2>/dev/null || echo 0) + 1 ))
+echo "${n}" > "${GH_COUNT_FILE}"
+if [ "${n}" -lt "${GH_FAIL_UNTIL}" ]; then
+  echo "transient: gh api temporarily unavailable" >&2
+  exit 1
+fi
+exit 0
+STUB
+  chmod +x "${STUB_DIR}/gh"
+  export GH_COUNT_FILE="${BATS_TEST_TMPDIR}/gh-count"
+  export GH_FAIL_UNTIL=2  # fail attempt 1, succeed attempt 2
+
+  run bash "${VERIFY}" "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PASS"*"SLSA"* ]]
+  [ "$(wc -l < "${GH_CALLS_FILE}")" -eq 2 ]  # retried exactly once
+}
+
+@test "persistent gh failure surfaces the real error and is bounded" {
+  cat > "${STUB_DIR}/gh" <<'STUB'
+#!/usr/bin/env bash
+echo "$@" >> "${GH_CALLS_FILE}"
+echo "DISTINCTIVE_GH_ERROR no attestations found" >&2
+exit 1
+STUB
+  chmod +x "${STUB_DIR}/gh"
+  export MEGALINT_VERIFY_ATTEMPTS=3
+
+  run bash "${VERIFY}" "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"FAIL"*"SLSA"* ]]
+  # The underlying error must be visible (was previously sent to /dev/null).
+  [[ "$output" == *"DISTINCTIVE_GH_ERROR"* ]]
+  # Bounded to MEGALINT_VERIFY_ATTEMPTS, not retried forever.
+  [ "$(wc -l < "${GH_CALLS_FILE}")" -eq 3 ]
+}
+
+@test "transient cosign failure retries then passes" {
+  cat > "${STUB_DIR}/cosign" <<'STUB'
+#!/usr/bin/env bash
+echo "$@" >> "${COSIGN_CALLS_FILE}"
+n=$(( $(cat "${COSIGN_COUNT_FILE}" 2>/dev/null || echo 0) + 1 ))
+echo "${n}" > "${COSIGN_COUNT_FILE}"
+if [ "${n}" -lt "${COSIGN_FAIL_UNTIL}" ]; then
+  echo "transient: registry 503" >&2
+  exit 1
+fi
+exit 0
+STUB
+  chmod +x "${STUB_DIR}/cosign"
+  export COSIGN_COUNT_FILE="${BATS_TEST_TMPDIR}/cosign-count"
+  export COSIGN_FAIL_UNTIL=2  # first cosign call fails once, then all pass
+
+  run bash "${VERIFY}" "ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"FAIL"* ]]
 }
 
 # --- MEGALINT_VERIFY_STRICT ---
