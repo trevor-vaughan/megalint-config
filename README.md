@@ -119,7 +119,10 @@ a handful of `cp` operations.
 - **`APPLY_FIXES=none`:** target mounted **read-only** with a nested
   read-write mount of `<target>/megalinter-reports/` (pre-created) so
   the linter can write findings without being able to modify anything
-  else.
+  else. MegaLinter's updated-sources reporter is switched off
+  (`UPDATED_SOURCES_REPORTER=false`): no linter rewrites files here, and
+  the work-tree diff it runs needs write access inside the read-only
+  `.git/` — which aborts the whole run in repos that use git-lfs.
 - **`APPLY_FIXES=all`:** target mounted read-write so MegaLinter can
   rewrite source files in place.
 
@@ -158,8 +161,10 @@ export MEGALINT_TMPDIR=1
 
 Trade-off: rsync walk of the source tree (sub-second on typical repos
 since `.git/` is excluded; longer on very large source trees). The
-`.git/` bind mount is always read-only regardless of `APPLY_FIXES` —
-fixes should affect tracked files, not the git database.
+`.git/` bind mount is read-only regardless of `APPLY_FIXES` — fixes
+should affect tracked files, not the git database — except on
+changed-files runs (`VALIDATE_ALL_CODEBASE=false`), where MegaLinter
+writes `.git/FETCH_HEAD` while resolving the diff base.
 
 ### Common to both modes
 

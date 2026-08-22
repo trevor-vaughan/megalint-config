@@ -161,6 +161,45 @@ The generated Dockerfile:
 - Installs only the required linters (reducing image size)
 - Copies linter configurations
 - Sets appropriate labels and metadata
+- Pins MegaLinter's Python dependencies to upstream's `uv.lock`
+
+#### Dependency pinning
+
+`MEGALINTER_VERSION` pins the upstream *source*, not the resulting
+image. Upstream declares several dependencies without a version bound in
+`pyproject.toml`, and its runtime stage installs the project with a bare
+`uv pip install --system -e .`, which re-resolves those against PyPI
+every time the image is built. The `uv.lock` that upstream's own builder
+stage consumes never reaches the shipped image.
+
+So the generator (`scripts/build_flavor_dockerfile.py`,
+`_inject_locked_constraints`) exports that lock to a constraints file and
+applies it to the runtime install:
+
+```dockerfile
+# builder stage — already binds uv.lock
+    uv sync --frozen --no-install-project \
+    && uv export -q --frozen --no-dev --no-hashes --no-emit-project \
+        --format requirements.txt -o /constraints.txt
+
+# runtime stage
+    --mount=type=bind,from=build-ml-core,source=/constraints.txt,target=/constraints.txt \
+    uv pip install --system -c /constraints.txt -e .
+```
+
+`--no-hashes` matters: an editable install cannot be hashed, and one
+hashed entry would put uv in require-hashes mode and reject `-e .`.
+
+This is not a hypothetical concern. On 2026-08-19 `multiprocessing-logging`
+released 0.4.0, which asserts that the multiprocessing start method is
+`fork`. The pinned `python:3.14` base defaults to `forkserver`
+([CPython gh-84559](https://github.com/python/cpython/issues/84559)), so
+MegaLinter began crashing on startup in `process_linters_parallel` — in
+an image built from an unchanged, pinned `MEGALINTER_VERSION`.
+
+Like the other generator transforms, this one raises if its anchor text
+is missing from the upstream template, so a layout change upstream fails
+the build loudly instead of silently reverting to unpinned resolution.
 
 ## Docker Usage
 

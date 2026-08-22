@@ -68,6 +68,9 @@ _inject_sarif_fmt = (
 _inject_gotoolchain = (
     build_flavor_dockerfile._inject_gotoolchain  # noqa: SLF001 — test exercises private helper
 )
+_inject_locked_constraints = (
+    build_flavor_dockerfile._inject_locked_constraints  # noqa: SLF001 — test exercises private helper
+)
 _qualify_from_image = (
     build_flavor_dockerfile._qualify_from_image  # noqa: SLF001 — test exercises private helper
 )
@@ -683,6 +686,12 @@ MINIMAL_TEMPLATE = """\
 #ARGTOP__END
 #FROM__START
 #FROM__END
+FROM python:3.14-alpine3.24 AS build-ml-core
+# Install dependencies
+RUN --mount=type=cache,target=/root/.cache/uv \\
+    --mount=type=bind,source=uv.lock,target=uv.lock \\
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \\
+    uv sync --frozen --no-install-project
 FROM oxsecurity/megalinter:v9
 # PATH for golang & python
 ENV GOROOT=/usr/lib/go \\
@@ -703,6 +712,10 @@ ENV GOROOT=/usr/lib/go \\
 #NPM__END
 #OTHER__START
 #OTHER__END
+COPY --from=build-ml-core megalinter /megalinter/
+RUN --mount=type=cache,target=/root/.cache/uv,from=build-ml-core \\
+    --mount=from=uv,source=/uv,target=/bin/uv \\
+    uv pip install --system -e .
 #FLAVOR__START
 ENV MEGALINTER_FLAVOR=all
 #FLAVOR__END
@@ -1183,3 +1196,118 @@ class TestInjectGotoolchain:
     def test_raises_when_go_env_block_absent(self):
         with pytest.raises(ValueError, match="Go ENV block not found"):
             _inject_gotoolchain("FROM base\nRUN true\n")
+
+
+# ── TestInjectLockedConstraints ───────────────────
+
+
+class TestInjectLockedConstraints:
+    """Runtime deps must come from upstream's uv.lock.
+
+    Upstream declares several dependencies unpinned in
+    pyproject.toml (e.g. ``multiprocessing_logging``) and the
+    final stage's ``uv pip install --system -e .`` re-resolves
+    them at build time, ignoring the uv.lock the builder stage
+    already uses. A pinned MEGALINTER_VERSION therefore did not
+    pin the image: multiprocessing-logging 0.4.0 shipped a
+    fork-only assertion that crashed MegaLinter on startup
+    against the Python 3.14 base, which defaults to forkserver.
+    """
+
+    BUILDER = (
+        "# Install dependencies\n"
+        "RUN --mount=type=cache,target=/root/.cache/uv \\\n"
+        "    --mount=type=bind,source=uv.lock,target=uv.lock \\\n"
+        "    --mount=type=bind,source=pyproject.toml,"
+        "target=pyproject.toml \\\n"
+        "    uv sync --frozen --no-install-project\n"
+    )
+    INSTALL = (
+        "RUN --mount=type=cache,target=/root/.cache/uv,"
+        "from=build-ml-core \\\n"
+        "    --mount=from=uv,source=/uv,target=/bin/uv \\\n"
+        "    uv pip install --system -e .\n"
+    )
+
+    def _dockerfile(self):
+        return f"FROM base\n{self.BUILDER}FROM base\n{self.INSTALL}"
+
+    def test_builder_exports_constraints_from_lock(self):
+        result = _inject_locked_constraints(self._dockerfile())
+        assert "uv export" in result
+        assert "--frozen" in result
+        assert "--no-emit-project" in result
+        assert "-o /constraints.txt" in result
+
+    def test_export_runs_in_stage_that_mounts_the_lock(self):
+        result = _inject_locked_constraints(self._dockerfile())
+        # The export must stay inside the RUN that binds uv.lock;
+        # anywhere else and --frozen has no lockfile to read.
+        assert result.index("source=uv.lock") < result.index(
+            "uv export",
+        )
+        assert result.index("uv export") < result.index(
+            "uv pip install --system",
+        )
+
+    def test_runtime_install_applies_the_constraints(self):
+        result = _inject_locked_constraints(self._dockerfile())
+        assert "uv pip install --system -c /constraints.txt -e ." in result
+        assert "uv pip install --system -e ." not in result
+
+    def test_runtime_install_mounts_constraints_from_builder(self):
+        result = _inject_locked_constraints(self._dockerfile())
+        assert (
+            "--mount=type=bind,from=build-ml-core,"
+            "source=/constraints.txt,target=/constraints.txt"
+        ) in result
+
+    def test_exported_constraints_carry_no_hashes(self):
+        # `-e .` cannot be hashed; a hashed constraints file would
+        # put uv in require-hashes mode and fail the editable install.
+        result = _inject_locked_constraints(self._dockerfile())
+        assert "--no-hashes" in result
+
+    def test_export_does_not_echo_the_lock_to_build_logs(self):
+        # Without -q, uv export writes the file *and* prints all 355
+        # pinned lines, burying the rest of the build output.
+        result = _inject_locked_constraints(self._dockerfile())
+        assert "uv export -q --frozen" in result
+
+    def test_is_idempotent(self):
+        once = _inject_locked_constraints(self._dockerfile())
+        twice = _inject_locked_constraints(once)
+        assert once == twice
+        assert twice.count("uv export") == 1
+
+    def test_raises_when_uv_sync_block_absent(self):
+        dockerfile = f"FROM base\n{self.INSTALL}"
+        with pytest.raises(ValueError, match="uv sync block not found"):
+            _inject_locked_constraints(dockerfile)
+
+    def test_raises_when_uv_install_block_absent(self):
+        dockerfile = f"FROM base\n{self.BUILDER}"
+        with pytest.raises(ValueError, match="uv pip install block not found"):
+            _inject_locked_constraints(dockerfile)
+
+    def test_full_generation_constrains_runtime_install(
+        self, tmp_path,
+    ):
+        template_file = tmp_path / "Dockerfile"
+        template_file.write_text(
+            MINIMAL_TEMPLATE, encoding="utf-8",
+        )
+        installs = {
+            "apk": [],
+            "npm": [],
+            "pip": {},
+            "gem": [],
+            "cargo": [],
+            "dockerfile": [],
+        }
+        result = generate_dockerfile(
+            template_file, installs, "test",
+        )
+        assert "uv export -q --frozen" in result
+        assert "uv pip install --system -c /constraints.txt -e ." in result
+        assert "uv pip install --system -e ." not in result

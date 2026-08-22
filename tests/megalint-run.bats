@@ -116,6 +116,36 @@ teardown() {
   ! grep -qE '^CKV_GITHUB_CONF_DIR_PATH=' "${ENGINE_ARGS_FILE}"
 }
 
+# MegaLinter's UpdatedSourcesReporter diffs the work tree (`git diff -M`) to
+# collect files the linters rewrote. On a read-only workspace that diff can
+# need to WRITE inside .git — a repo with `filter=lfs` .gitattributes makes git
+# run the required LFS clean filter, which fails on `.git/lfs/tmp` and aborts
+# git with exit 128, crashing an otherwise-passing run. With apply_fixes=none
+# nothing is ever rewritten, so the reporter is turned off.
+@test "runner disables UPDATED_SOURCES_REPORTER when apply_fixes=none (read-only .git)" {
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" \
+    "${TARGET}" \
+    "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" \
+    "none"
+
+  [ "$status" -eq 0 ]
+  grep -qE '^UPDATED_SOURCES_REPORTER=false$' "${ENGINE_ARGS_FILE}"
+}
+
+@test "runner leaves UPDATED_SOURCES_REPORTER alone when apply_fixes=all (rw mount)" {
+  run bash "${RUNNER}" \
+    "${REPO_ROOT}" \
+    "${TARGET}" \
+    "${STUB_DIR}/fake-engine" \
+    "fake/image:latest" \
+    "all"
+
+  [ "$status" -eq 0 ]
+  ! grep -qE '^UPDATED_SOURCES_REPORTER=' "${ENGINE_ARGS_FILE}"
+}
+
 @test "config_file arg wins over a present .mega-linter.local.yml" {
   # A local override is present, yet the explicit config_file arg must be the
   # single MEGALINTER_CONFIG (runner logs "ignoring .mega-linter.local.yml").

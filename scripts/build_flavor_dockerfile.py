@@ -742,6 +742,89 @@ def _inject_gotoolchain(dockerfile: str) -> str:
     )
 
 
+# Exact anchors from the upstream MegaLinter base Dockerfile.
+# The builder stage binds uv.lock; the runtime stage does not.
+UV_SYNC_BLOCK = "    uv sync --frozen --no-install-project"
+UV_INSTALL_BLOCK = "    uv pip install --system -e ."
+
+# --no-emit-project drops megalinter itself (installed via -e .).
+# --no-hashes is required: an editable install cannot be hashed, and
+# a single hashed entry puts uv in require-hashes mode for the whole
+# resolution, which would reject `-e .`.
+# -q keeps the exported pins out of the build log; -o still writes them.
+UV_EXPORT_CMD = (
+    " \\\n"
+    "    && uv export -q --frozen --no-dev --no-hashes"
+    " --no-emit-project --format requirements.txt"
+    " -o /constraints.txt"
+)
+
+CONSTRAINTS_MOUNT = (
+    "    --mount=type=bind,from=build-ml-core,"
+    "source=/constraints.txt,target=/constraints.txt \\\n"
+)
+
+UV_INSTALL_CONSTRAINED = (
+    "    uv pip install --system -c /constraints.txt -e ."
+)
+
+
+def _inject_locked_constraints(dockerfile: str) -> str:
+    """Pin runtime Python deps to upstream's uv.lock.
+
+    Upstream declares several dependencies unpinned in
+    pyproject.toml, and the runtime stage installs the project
+    with a bare ``uv pip install --system -e .`` that re-resolves
+    them against PyPI at build time. The uv.lock the builder
+    stage already consumes never reaches the shipped image, so
+    pinning MEGALINTER_VERSION pins the source but not the
+    artifact — any upstream dependency release can change what we
+    publish.
+
+    That is not hypothetical: multiprocessing-logging 0.4.0 added
+    an assertion requiring the 'fork' start method, which the
+    pinned python:3.14 base no longer defaults to (it uses
+    forkserver, CPython gh-84559). MegaLinter then crashed on
+    startup in process_linters_parallel, in an image built from
+    an unchanged, pinned MEGALINTER_VERSION.
+
+    Exports the lock to a constraints file in the builder stage
+    and applies it to the runtime install, so shipped dependency
+    versions are exactly the ones upstream locked and tested.
+    Idempotent; raises if either anchor is missing so a template
+    layout change fails the build loudly instead of silently
+    reverting to unpinned resolution.
+    """
+    if UV_INSTALL_CONSTRAINED in dockerfile:
+        return dockerfile
+    if UV_SYNC_BLOCK not in dockerfile:
+        msg = (
+            "uv sync block not found in Dockerfile template; cannot "
+            "export locked constraints. The upstream template layout "
+            "changed — update UV_SYNC_BLOCK in "
+            "build_flavor_dockerfile.py."
+        )
+        raise ValueError(msg)
+    if UV_INSTALL_BLOCK not in dockerfile:
+        msg = (
+            "uv pip install block not found in Dockerfile template; "
+            "cannot apply locked constraints. The upstream template "
+            "layout changed — update UV_INSTALL_BLOCK in "
+            "build_flavor_dockerfile.py."
+        )
+        raise ValueError(msg)
+    dockerfile = dockerfile.replace(
+        UV_SYNC_BLOCK,
+        f"{UV_SYNC_BLOCK}{UV_EXPORT_CMD}",
+        1,
+    )
+    return dockerfile.replace(
+        UV_INSTALL_BLOCK,
+        f"{CONSTRAINTS_MOUNT}{UV_INSTALL_CONSTRAINED}",
+        1,
+    )
+
+
 def _insert_healthcheck(dockerfile: str) -> str:
     """Insert a HEALTHCHECK before the first ENTRYPOINT.
 
@@ -881,6 +964,7 @@ def generate_dockerfile(
     # ── Extra tools (not from descriptors) ───────
     result = _inject_sarif_fmt(result)
     result = _inject_gotoolchain(result)
+    result = _inject_locked_constraints(result)
 
     # Add COPY for flavor config file before ENTRYPOINT
     flavor_copy = (
