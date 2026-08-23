@@ -426,11 +426,23 @@ if [[ "${apply_fixes}" == "none" ]]; then
 	if [[ "${VALIDATE_ALL_CODEBASE:-}" == "false" && -d "${workspace}/.git" ]] && ! "${use_tempdir}"; then
 		mounts+=(-v "${workspace}/.git:/tmp/lint/.git:rw,z")
 	fi
+	# MegaLinter's UpdatedSourcesReporter collects the files linters rewrote by
+	# diffing the work tree (`git diff -M` via GitPython). APPLY_FIXES=none
+	# rewrites nothing, so it has nothing to collect — but the diff itself needs
+	# write access inside .git, which the read-only mount denies on
+	# full-codebase runs (.git is overlaid read-write only for changed-files
+	# runs, above). Git re-reads work-tree content because rootless container
+	# UID remapping leaves every index entry stat-dirty; in a repo whose
+	# .gitattributes assigns a required content filter (git-lfs), that filter
+	# then fails on .git/lfs/tmp and git exits 128. MegaLinter does not catch
+	# the resulting GitCommandError, so an otherwise-clean run crashes during
+	# reporting.
 	env_args+=(
 		-e "TMPDIR=/tmp"
 		-e "RUFF_CACHE_DIR=/tmp/ruff-cache"
 		-e "XDG_CACHE_HOME=/tmp/xdg-cache"
 		-e "CKV_GITHUB_CONF_DIR_NAME=/tmp/checkov-github-conf"
+		-e "UPDATED_SOURCES_REPORTER=false"
 	)
 else
 	mounts=(-v "${workspace}:/tmp/lint:rw,z")
