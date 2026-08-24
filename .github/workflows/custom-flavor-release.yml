@@ -154,6 +154,32 @@ jobs:
         with:
           enable-cache: false # Prevent cache-poisoning in release workflow
 
+      - name: Verify tag matches the committed version
+        # Only tag pushes carry a version to check; the cron refresh lane has
+        # no tag. Both sides are normalised through uv because PEP 440 and
+        # semver disagree about pre-releases: tag v0.6.0-rc1 corresponds to
+        # project version 0.6.0rc1, so a raw string compare would fail every
+        # release candidate.
+        #
+        # RELEASE_VERSION is bound as an env var and quoted at every use rather
+        # than interpolated into the script. compute-release-version.sh has
+        # already matched it against a strict semver regex, but binding keeps
+        # the tag out of the shell's parse step regardless.
+        if: steps.identity.outputs.create_release == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.release_version }}
+        run: |
+          set -euo pipefail
+          tag_version="$(uv version --dry-run --short --frozen "${RELEASE_VERSION}")"
+          project_version="$(uv version --short)"
+          if [ "${tag_version}" != "${project_version}" ]; then
+            echo "Tag v${RELEASE_VERSION} (normalises to ${tag_version}) does not match" \
+                 "the committed project version ${project_version}." >&2
+            echo "Cut releases with 'task release:bump' so the two cannot diverge." >&2
+            exit 1
+          fi
+          echo "Tag v${RELEASE_VERSION} matches project version ${project_version}"
+
       - name: Install Task
         uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
         with:
@@ -487,6 +513,20 @@ jobs:
           if [ "${MOVE_LATEST}" = "true" ]; then
             LATEST_LINE="- \`${IMAGE}:latest\` (moved to this release)"
           fi
+
+          # Notes lead with the CHANGELOG.md section that `task release:bump`
+          # committed alongside this tag, so the published release and the file
+          # in the repository cannot disagree. A tag cut by hand has no section;
+          # that must not sink a release which is already built, signed and
+          # attested, so the image details are published on their own.
+          CHANGES=""
+          if CHANGES="$(.taskfiles/scripts/changelog-section.sh "${RELEASE_VERSION}" CHANGELOG.md)"; then
+            echo "Using CHANGELOG.md section for ${RELEASE_VERSION}"
+          else
+            CHANGES="_No changelog section for ${RELEASE_VERSION}._"
+            echo "::warning::No CHANGELOG.md section for ${RELEASE_VERSION}; publishing image details only"
+          fi
+
           cat <<EOF | gh release create "${RELEASE_TAG}" ${PRERELEASE_FLAG} \
             --title "Custom Flavor ${RELEASE_TAG} (${COMPOSITE})" \
             --notes-file -
@@ -494,6 +534,8 @@ jobs:
 
           Custom MegaLinter flavor generated from configuration.
           Base image: \`${BASE_IMAGE_REF}\`
+
+          ${CHANGES}
 
           ### Image Tags
           - \`${IMAGE}:${COMPOSITE}\` (immutable)
