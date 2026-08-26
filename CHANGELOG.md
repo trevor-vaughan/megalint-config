@@ -5,23 +5,47 @@ generated from [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org); do not edit it by hand — run
 `task release:bump` instead.
 
-## [unreleased]
+## [0.5.1] - 2026-08-26
 
 ### 🚀 Features
 
-- Add changelog section extractor for release notes
-- Add semver precedence comparator for release bumping
-- Add release-bump script with version and tag guards
-- Wire release tasks into the Taskfile
+- *(release)* Add release:bump task for cutting releases
+- *(release)* Add changelog-section.sh to extract one release's notes
+  - Lives in a script rather than inline in the workflow so the bats suite exercises the same extraction CI runs.
+- *(changelog)* Harvest conventional bullets from commit bodies
 
 ### 🐛 Bug Fixes
 
 - Retry transient attestation-verify failures and surface the error
 - Disable updated-sources reporter on read-only runs
+- *(flavor)* Pin runtime python deps to upstream uv.lock
+  - MEGALINTER_VERSION pins the upstream source, not the shipped image. Upstream leaves several deps unpinned in pyproject.toml and installs with a bare `uv pip install --system -e .` that re-resolves them against PyPI on every build, so the uv.lock its builder stage consumes never reaches the image. On 2026-08-19 multiprocessing-logging 0.4.0 added a fork-only assertion; the pinned python:3.14 base defaults to forkserver (CPython gh-84559), crashing MegaLinter on startup from an otherwise unchanged MEGALINTER_VERSION. The generator now exports the lock to a constraints file and applies it to the runtime install (--no-hashes, since `-e .` cannot be hashed), and raises if the upstream anchor text is missing.
+- *(release)* Reset the project version from 0.5.1 to 0.5.0
+  - 0.5.1 was never released and the newest tag is v0.5.0, so the tag/version check would have failed on the first run.
+
+### 📚 Documentation
+
+- Document the reporter toggle and uv.lock pinning; correct the tempdir .git note (changed-files runs mount it read-write)
+- *(release)* Rewrite the README release section and add docs/dev/releasing.md covering the invariants the script enforces
+- *(release)* Document the commit-body convention and its two consequences for version selection and `chore(release)` bullets
+
+### 🧪 Testing
+
+- Cover the reporter toggle (bats) and constraint injection (pytest)
+- *(release)* Add bats coverage for release-bump.sh, its semver §11 comparator, and changelog-section.sh
+- *(changelog)* Add bats coverage for body-bullet harvesting
+  - Runs the real git-cliff rather than a stub, since the behaviour under test is cliff.toml itself.
 
 ### ⚙️ Miscellaneous Tasks
 
-- Add git-cliff configuration for changelog generation
+- *(release)* Fail the release when the tag and committed version differ
+  - Both sides are normalised through `uv version --dry-run`, since PEP 440 and semver disagree on pre-releases (v0.6.0-rc1 vs 0.6.0rc1).
+- *(release)* Publish the CHANGELOG.md section as the GitHub release notes
+  - A hand-cut tag has no section; that warns and publishes image details only rather than failing a build that is already signed and attested.
+- *(megalinter)* Exclude the generated CHANGELOG.md from markdownlint
+  - Commit subjects containing `_NAME` trip MD037, and the only fix would be rewriting history.
+- *(changelog)* Group `build` with the other maintenance types
+  - Hoisting surfaces the `build(...)` entries this project writes, which would otherwise fall through to the catch-all "Other" group.
 
 ## [0.5.0] - 2026-07-09
 

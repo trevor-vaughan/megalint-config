@@ -64,7 +64,10 @@ task release:bump -- 0.6.0  # or state the version outright
 
 That bumps `pyproject.toml` and `uv.lock`, regenerates `CHANGELOG.md` from the
 Conventional Commits since the last release, commits, and creates an annotated
-tag. Nothing is pushed — review the commit, then:
+tag. Conventional Commit bullets in a commit *body* count as entries too, which
+is how a squash-merged branch still lists its individual changes — see
+[docs/dev/releasing.md](docs/dev/releasing.md). Nothing is pushed — review the
+commit, then:
 
 ```bash
 git push --follow-tags

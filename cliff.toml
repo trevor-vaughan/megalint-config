@@ -29,9 +29,13 @@ body = """
 {% for group, commits in commits | group_by(attribute="group") %}
     ### {{ group | striptags | trim | upper_first }}
     {% for commit in commits %}
+        {% set entry = commit.message | split(pat="%%SUB%%") %}\
         - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
             {% if commit.breaking %}[**breaking**] {% endif %}\
-            {{ commit.message | upper_first }}\
+            {{ entry | first | trim | upper_first }}\
+        {% for sub in entry | slice(start=1) %}
+            %%INDENT%%- {{ sub | trim | upper_first }}\
+        {% endfor %}\
     {% endfor %}
 {% endfor %}
 """
@@ -47,6 +51,10 @@ postprocessors = [
     # the leading blank line this adds before the first release is the same
     # single separator every other release gets.
     { pattern = '(?m)^## \[', replace = "\n## [" },
+    # `trim` also strips the template's own leading whitespace, so a nested
+    # list marker cannot be indented in the template itself. The body emits
+    # this sentinel instead and it becomes the indent here.
+    { pattern = '%%INDENT%%', replace = "  " },
 ]
 
 [git]
@@ -59,22 +67,70 @@ conventional_commits = true
 # "Semver error: unexpected character 'r' while parsing major version number".
 tag_pattern = "v[0-9]*"
 # Exclude commits that do not match the conventional commits specification.
-# This is what keeps "Merge pull request #21 from ..." and the historic
-# "Version Bump" / "prep for v0.2.0" commits out of the changelog.
+# This is what keeps the historic "Version Bump" / "prep for v0.2.0" commits
+# out of the changelog. Merge commits are excluded by the `merge_commit` parser
+# below instead: preprocessing removes their subject, so by the time this
+# applies there is nothing unconventional left to catch.
 filter_unconventional = true
 # Require all commits to be conventional.
 # Takes precedence over filter_unconventional.
 require_conventional = false
 # Split commits on newlines, treating each line as an individual commit.
-split_commits = false
+#
+# Squash-merged branches carry their individual changes as a bullet list in the
+# commit body. Splitting is what lets each of those bullets reach
+# `commit_parsers` on its own and land under the group its own type selects,
+# rather than being lost behind the squashed subject. The preprocessors below
+# reduce the message to exactly the lines that should survive this split.
+split_commits = true
 # An array of regex based parsers to modify commit messages prior to further processing.
-commit_preprocessors = []
+#
+# These run before `split_commits`, so they see the whole raw message and are
+# what makes splitting on newlines safe. Together they reduce a message to one
+# line per change, discarding everything else. Order is significant.
+#
+# The Rust regex crate has no lookahead, so "delete the lines that are not
+# conventional commits" cannot be written directly. Steps 5-7 mark the keepers,
+# delete everything unmarked, then remove the marks.
+commit_preprocessors = [
+    # 1. Rejoin a word the author broke across a wrap. This has to precede the
+    #    general unwrap below, which would otherwise leave a space inside the
+    #    word. The trailing hyphen is kept: it is part of names like
+    #    `multiprocessing-logging`.
+    { pattern = '(?m)-\n[ \t]+([^-*\s])', replace = "-$1" },
+    # 2. Unwrap hard-wrapped lines. A continuation is indented and does not
+    #    start a new bullet, so it is folded back onto the line it belongs to.
+    { pattern = '(?m)\n[ \t]+([^-*\s])', replace = " $1" },
+    # 3. Fold each sub-bullet onto its parent's line behind a sentinel, so the
+    #    split keeps them together. The body template splits them back apart.
+    { pattern = '(?m)\n[ \t]+[-*][ \t]+', replace = " %%SUB%% " },
+    # 4. Drop the list marker from top-level bullets, leaving the conventional
+    #    commit at the start of the line where the parser expects it.
+    { pattern = '(?m)^[-*][ \t]+', replace = "" },
+    # 5. Mark every line that is a conventional commit. The subject is already
+    #    one; the surviving body bullets became one in step 4.
+    { pattern = '(?m)^((build|chore|ci|docs?|feat|fix|perf|refactor|revert|style|test)(\([^)]*\))?!?:)', replace = "%%KEEP%%$1" },
+    # 6. Delete every unmarked line: prose paragraphs, plain bullets, and the
+    #    subject of a merge commit. Only marked lines begin with `%`.
+    { pattern = '(?m)^[^%\n].*$', replace = "" },
+    # 7. Remove the marks now that only keepers remain.
+    { pattern = '%%KEEP%%', replace = "" },
+    # 8. Collapse the blank lines step 6 left behind, so the split does not
+    #    yield empty commits.
+    { pattern = '\n{2,}', replace = "\n" },
+]
 # Prevent commits that are breaking from being excluded by commit parsers.
 protect_breaking_commits = false
 # An array of regex based parsers for extracting data from the commit message.
 # Assigns commits to groups.
 # Optionally sets the commit's scope and can decide to exclude commits from further processing.
 commit_parsers = [
+    # A merge commit's body repeats the branch's own conventional subjects, and
+    # the preprocessors above promote those into entries just as they do for a
+    # squashed body. `filter_unconventional` no longer removes them, because
+    # after preprocessing the merge subject is gone and what remains parses.
+    # Skipping the merge commit outright keeps each change listed once.
+    { field = "merge_commit", pattern = "true", skip = true },
     { message = "^feat", group = "<!-- 0 -->🚀 Features" },
     { message = "^fix", group = "<!-- 1 -->🐛 Bug Fixes" },
     { message = "^doc", group = "<!-- 3 -->📚 Documentation" },
@@ -86,7 +142,10 @@ commit_parsers = [
     # bump itself out of the *next* release's notes, so regenerating the whole
     # changelog later reproduces the same file.
     { message = "^chore\\(release\\)", skip = true },
-    { message = "^chore|^ci", group = "<!-- 7 -->⚙️ Miscellaneous Tasks" },
+    # `build` is grouped here rather than left to the `.*` catch-all: hoisting
+    # body bullets surfaces the `build(...)` entries this project writes, and
+    # they are maintenance work like the rest of this group.
+    { message = "^build|^chore|^ci", group = "<!-- 7 -->⚙️ Miscellaneous Tasks" },
     { body = ".*security", group = "<!-- 8 -->🛡️ Security" },
     { message = "^revert", group = "<!-- 9 -->◀️ Revert" },
     { message = ".*", group = "<!-- 10 -->💼 Other" },
