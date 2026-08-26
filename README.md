@@ -58,15 +58,35 @@ This repo also publishes a **custom MegaLinter flavor image** to
 ### Cutting a release
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+task release:bump           # prompts, defaulting to what git-cliff derives
+task release:bump -- 0.6.0  # or state the version outright
 ```
 
-The tag push builds the multi-platform image, publishes `:0.1.0-ml<upstream>`
+That bumps `pyproject.toml` and `uv.lock`, regenerates `CHANGELOG.md` from the
+Conventional Commits since the last release, commits, and creates an annotated
+tag. Nothing is pushed — review the commit, then:
+
+```bash
+git push --follow-tags
+```
+
+The tag push builds the multi-platform image, publishes `:0.6.0-ml<upstream>`
 and `:sha-<commit>`, moves `:latest` (non-pre-releases only), attaches SLSA
-provenance + SBOM attestations, and creates a GitHub release. Pre-release tags
-(`v0.1.0-rc1`) publish a composite image but do not move `:latest`. The weekly
-cron rebuilds `:latest` only, to absorb upstream patches between releases.
+provenance + SBOM attestations, and creates a GitHub release whose notes are
+this version's `CHANGELOG.md` section.
+
+Pre-releases publish a composite image but never move `:latest`:
+
+```bash
+task release:bump -- 0.6.0-rc1   # tags v0.6.0-rc1
+```
+
+The weekly cron rebuilds `:latest` only, to absorb upstream patches between
+releases.
+
+`task release:current` prints the version currently committed. Requires
+[uv](https://docs.astral.sh/uv/); `git-cliff` is fetched on demand via `uvx`.
+Maintainer notes on how this works live in [docs/dev/releasing.md](docs/dev/releasing.md).
 
 ## Running MegaLinter
 

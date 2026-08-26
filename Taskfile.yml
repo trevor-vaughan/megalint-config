@@ -8,6 +8,8 @@ includes:
     taskfile: .taskfiles/flavor.yml
   megalint:
     taskfile: .taskfiles/megalint.yml
+  release:
+    taskfile: .taskfiles/release.yml
 
 vars:
   CONTAINER_ENGINE:
