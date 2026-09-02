@@ -95,7 +95,7 @@ task flavor:test
 | `CONFIG_FILE`        | `.mega-linter.yml` | MegaLinter configuration file path                          |
 | `OUTPUT_DIR`         | `./custom-flavor`  | Output directory for generated files                        |
 | `FLAVOR_NAME`        | `shared-config`    | Name of the custom flavor                                   |
-| `MEGALINTER_VERSION` | `9.6.0`            | Upstream MegaLinter version to clone and extend as the base |
+| `MEGALINTER_VERSION` | `10.0.0`           | Upstream MegaLinter version to clone and extend as the base |
 
 #### `flavor:validate`
 

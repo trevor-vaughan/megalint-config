@@ -1,14 +1,14 @@
 version: "3"
 
 vars:
-  MEGALINTER_VERSION: '{{.MEGALINTER_VERSION | default "9.6.0"}}'
+  MEGALINTER_VERSION: '{{.MEGALINTER_VERSION | default "10.0.0"}}'
   MEGALINTER_CACHE_DIR: "{{.ROOT_DIR}}/.cache/megalinter-v{{.MEGALINTER_VERSION}}"
 
 # MEGALINTER_IMAGE is the full image reference (name:tag), the same variable
 # name and semantics as megalint.yml — so an image override flows identically
 # through build and lint:
-#   task flavor:build MEGALINTER_IMAGE=localhost/megalinter-local:v9.6.0
-#   task megalint     MEGALINTER_IMAGE=localhost/megalinter-local:v9.6.0
+#   task flavor:build MEGALINTER_IMAGE=localhost/megalinter-local:v10.0.0
+#   task megalint     MEGALINTER_IMAGE=localhost/megalinter-local:v10.0.0
 # Its default is declared per-task (not here) on purpose: Task merges every
 # include's top-level vars into one shared map, so a top-level default would
 # globally clobber megalint.yml's different default (last include wins). A
@@ -28,7 +28,7 @@ tasks:
       Idempotent: skips if the cache directory already exists.
 
       Variables:
-        MEGALINTER_VERSION: MegaLinter version to clone (default: 9.6.0)
+        MEGALINTER_VERSION: MegaLinter version to clone (default: 10.0.0)
     status:
       - test -d "{{.MEGALINTER_CACHE_DIR}}/megalinter/descriptors"
     cmds:

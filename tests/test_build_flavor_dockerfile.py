@@ -1,6 +1,7 @@
 # tests/test_build_flavor_dockerfile.py
 import importlib.util
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 import yaml
@@ -595,7 +596,7 @@ class TestApkBuildPackages:
     # The base list already ships gcc/make/musl-dev/libffi-dev
     # unconditionally, so asserting on those would prove nothing about
     # apk_build handling.
-    DESCRIPTOR = {
+    DESCRIPTOR: ClassVar[dict] = {
         "descriptor_id": "LUA",
         "linters": [
             {

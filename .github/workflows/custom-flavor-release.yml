@@ -9,7 +9,7 @@ name: Custom Flavor Release
   workflow_dispatch:
     inputs:
       base_image:
-        description: "Base MegaLinter image (e.g. ghcr.io/oxsecurity/megalinter:v9.6.0)"
+        description: "Base MegaLinter image (e.g. ghcr.io/oxsecurity/megalinter:v10.0.0)"
         required: false
         default: ""
         type: string
@@ -17,7 +17,7 @@ name: Custom Flavor Release
 # Pin to the same version PR validation clones (.taskfiles/flavor.yml
 # MEGALINTER_VERSION). Bump both together to adopt a new upstream base.
 env:
-  DEFAULT_BASE_IMAGE: ghcr.io/oxsecurity/megalinter:v9.6.0
+  DEFAULT_BASE_IMAGE: ghcr.io/oxsecurity/megalinter:v10.0.0
 
 permissions:
   contents: write # gh release create

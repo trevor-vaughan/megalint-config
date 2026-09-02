@@ -75,6 +75,16 @@ FILTER_REGEX_EXCLUDE: "^vendor/"
 # (full minus REPOSITORY_*, via .taskfiles/scripts/changed-enable-linters.sh),
 # so there is no separate list to keep in sync.
 
+# Let DISABLE_LINTERS win over ENABLE_LINTERS (new in MegaLinter v10; the
+# default is ENABLE). This config is consumed by other repositories through
+# EXTENDS, and this is what lets them subtract from the inherited list instead
+# of restating every entry just to drop one linter.
+#
+# Consequence: a linter named in BOTH lists is silently switched OFF, with
+# nothing in the run log to say so. test_config_sanity.py asserts the two lists
+# stay disjoint, which is the invariant that makes this setting safe to ship.
+ENABLE_DISABLE_LINTERS_PRIORITY: DISABLE
+
 ENABLE_LINTERS:
   # ---------------------------------------------------------------------------
   # Core Languages (present in this repository)
@@ -103,7 +113,10 @@ ENABLE_LINTERS:
   #   - https://megalinter.io/latest/descriptors/go_golangci_lint/
   - GO_GOLANGCI_LINT # Go meta-linter (bundles govet/staticcheck/gosec/errcheck)
   - RUBY_RUBOCOP # Ruby linter + formatter (supports auto-fix)
-  - MAKEFILE_CHECKMAKE # Makefile best-practices linter
+  # Makefile linting is no longer available: MegaLinter v10 removed
+  # MAKEFILE_CHECKMAKE (unresolved security issues upstream) and deleted the
+  # MAKEFILE descriptor with it. There is no replacement.
+  # See https://megalinter.io/latest/removed-linters/
   - PROTOBUF_PROTOLINT # Protocol Buffers (.proto) linter (supports auto-fix)
   - SQL_SQLFLUFF # SQL linter + formatter (dialect defaulted below; supports auto-fix)
   # TypeScript/JavaScript: ESLint for linting, Prettier for formatting. The
@@ -123,7 +136,12 @@ ENABLE_LINTERS:
   - YAML_YAMLLINT # YAML syntax validation
   - YAML_PRETTIER # YAML formatting (supports auto-fix)
   - MARKDOWN_MARKDOWNLINT # Markdown formatting
-  - MARKDOWN_MARKDOWN_LINK_CHECK # Markdown link checking
+  # Link checking. Replaced MARKDOWN_MARKDOWN_LINK_CHECK, which MegaLinter
+  # removed in favour of lychee on performance grounds. Note this linter makes
+  # outbound network requests, so it is exposed to rate limits, transient 5xx
+  # responses and dead third-party links; see its timeout below. Consumers who
+  # would rather not lint external links can disable it via DISABLE_LINTERS.
+  - SPELL_LYCHEE # Link checking (lychee)
   - MARKDOWN_MARKDOWN_TABLE_FORMATTER # Markdown table formatting (supports auto-fix)
   - EDITORCONFIG_EDITORCONFIG_CHECKER # Cross-editor consistency
   - ENV_DOTENV_LINTER # .env file linting (supports auto-fix)
@@ -138,10 +156,10 @@ ENABLE_LINTERS:
   - TERRAFORM_TFLINT # Terraform configuration validation
   - CLOUDFORMATION_CFN_LINT # AWS CloudFormation validation
   - ANSIBLE_ANSIBLE_LINT # Ansible playbook/role best-practices linting
-  # Spectral lives in the API descriptor, so the linter key is API_SPECTRAL
-  # (not OPENAPI_SPECTRAL — that schema alias has no descriptor and would be
-  # silently dropped from the generated slim flavor).
-  - API_SPECTRAL # OpenAPI/Swagger/AsyncAPI specification linting (spectral)
+  # OpenAPI/AsyncAPI spec linting is no longer available: MegaLinter v10
+  # removed API_SPECTRAL (crashing with no upstream fix) and deleted the API
+  # descriptor with it. There is no replacement.
+  # See https://megalinter.io/latest/removed-linters/
 
   # ---------------------------------------------------------------------------
   # Security & Compliance (multi-layer defense)
@@ -174,8 +192,10 @@ DISABLE_LINTERS:
   # Security - high false positive rate
   - PYTHON_BANDIT # 94 false positive assert warnings in test files
 
-  # Secrets - superseded by betterleaks (same author, drop-in, reads .gitleaks.toml)
-  - REPOSITORY_GITLEAKS # Replaced by REPOSITORY_BETTERLEAKS (MegaLinter 9.6.0)
+  # Secrets - REPOSITORY_GITLEAKS is absent rather than disabled: MegaLinter
+  # v10 removed it outright, so there is nothing left to disable and listing it
+  # would only cost a startup notice. REPOSITORY_BETTERLEAKS (enabled above,
+  # same author, drop-in) replaces it and reads the same .gitleaks.toml.
 
   # Go - redundant with golangci-lint (which bundles govet/staticcheck/gosec/etc.)
   - GO_REVIVE # Overlapping findings with GO_GOLANGCI_LINT
@@ -190,12 +210,16 @@ DISABLE_LINTERS:
   - TYPESCRIPT_STANDARD # Conflicts with TYPESCRIPT_ES
   - JAVASCRIPT_STANDARD # Conflicts with JAVASCRIPT_ES
 
-  # Security - dropped after a reported upstream supply-chain compromise.
-  # Removed from ENABLE_LINTERS above so the slim flavor never builds or
-  # ships the KICS binary (the flavor is generated from ENABLE_LINTERS
-  # alone). IaC misconfiguration coverage is retained via REPOSITORY_CHECKOV
-  # and REPOSITORY_TRIVY.
-  - REPOSITORY_KICS # Removed: upstream supply-chain compromise
+  # Security - REPOSITORY_KICS is absent rather than disabled. It was dropped
+  # after a reported upstream supply-chain compromise, and MegaLinter v10 has
+  # since removed it entirely, so a DISABLE_LINTERS entry would name a linter
+  # that cannot run and would only cost a startup notice.
+  #
+  # It must never return to ENABLE_LINTERS: the slim flavor is generated from
+  # that list alone, so an entry there would put the KICS binary back into the
+  # published image. Guarded by test_kics_removed_from_enabled_linters. IaC
+  # misconfiguration coverage is retained via REPOSITORY_CHECKOV and
+  # REPOSITORY_TRIVY.
 
   # Other
   - REPOSITORY_KINGFISHER # Redundant with other security tools
@@ -263,6 +287,28 @@ REPOSITORY_CHECKOV_CONFIG_FILE: .checkov.yml
 # DevSkim: Rule and path exclusions are in .devskim.json. In this repo it
 # lives in .mega-linter.d/ and is overlaid at the workspace root by the runner.
 REPOSITORY_DEVSKIM_CONFIG_FILE: .devskim.json
+
+# -----------------------------------------------------------------------------
+# Linter timeouts
+# -----------------------------------------------------------------------------
+# MegaLinter v10 added a default LINTER_TIMEOUT_SECONDS of 300: a linter that
+# exceeds it is killed and reported as an error with exit code 124. That global
+# default is left in place deliberately — it is a real guard against a hung
+# linter stalling CI indefinitely.
+#
+# These linters legitimately run longer. They scan the whole repository in
+# `project` CLI lint mode, or download a vulnerability database on a cold
+# cache, so the 300s default would turn a slow-but-healthy run red — here and
+# in every repository that inherits this config.
+REPOSITORY_TRIVY_TIMEOUT_SECONDS: 900 # cold vulnerability-DB download
+REPOSITORY_GRYPE_TIMEOUT_SECONDS: 900 # cold vulnerability-DB download
+REPOSITORY_CHECKOV_TIMEOUT_SECONDS: 600 # whole-repository IaC scan
+REPOSITORY_TRUFFLEHOG_TIMEOUT_SECONDS: 600 # full git-history secret scan
+GO_GOLANGCI_LINT_TIMEOUT_SECONDS: 600 # typecheck + toolchain download
+# lychee makes outbound network requests, so it is exposed to rate limits and
+# slow third-party hosts. Consumers linting many external links may need to
+# raise this further, or disable SPELL_LYCHEE entirely.
+SPELL_LYCHEE_TIMEOUT_SECONDS: 600 # network-bound link checking
 
 # Betterleaks: Secrets scanner that replaced REPOSITORY_GITLEAKS in 9.6.0.
 # It is backward compatible with the gitleaks config format, so it reuses the
