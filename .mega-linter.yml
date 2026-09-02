@@ -310,7 +310,8 @@ GO_GOLANGCI_LINT_TIMEOUT_SECONDS: 600 # typecheck + toolchain download
 # raise this further, or disable SPELL_LYCHEE entirely.
 SPELL_LYCHEE_TIMEOUT_SECONDS: 600 # network-bound link checking
 
-# Betterleaks: Secrets scanner that replaced REPOSITORY_GITLEAKS in 9.6.0.
+# Betterleaks: Secrets scanner that superseded REPOSITORY_GITLEAKS, which
+# MegaLinter removed outright in v10 (same author, drop-in replacement).
 # It is backward compatible with the gitleaks config format, so it reuses the
 # existing .gitleaks.toml (extend useDefault + allowlist for .cache/ and
 # custom-flavor/) rather than duplicating it into a .betterleaks.toml. The

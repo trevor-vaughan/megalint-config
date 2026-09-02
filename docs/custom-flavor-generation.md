@@ -23,9 +23,10 @@ task flavor:generate
 ```
 
 This creates a `./custom-flavor/` directory with all necessary files using default settings:
+
 - Configuration file: `.mega-linter.yml`
 - Flavor name: `shared-config`
-- Base image: the upstream MegaLinter image at the pinned `MEGALINTER_VERSION` (default `9.6.0`), which the generator clones and extends
+- Base image: the upstream MegaLinter image at the pinned `MEGALINTER_VERSION` (default `10.0.0`), which the generator clones and extends
 
 ### Custom Configuration
 
@@ -38,11 +39,10 @@ task flavor:generate \
   FLAVOR_NAME=my-custom-flavor
 ```
 
-To build against a different upstream MegaLinter version, set
-`MEGALINTER_VERSION` (it re-clones the pinned source the flavor extends):
+To build against a different upstream MegaLinter version, set `MEGALINTER_VERSION` (it re-clones the pinned source the flavor extends):
 
 ```bash
-task flavor:generate MEGALINTER_VERSION=9.6.0
+task flavor:generate MEGALINTER_VERSION=10.0.0
 ```
 
 ### Validation and Testing
@@ -78,7 +78,7 @@ task flavor:test
 ### Core Tasks
 
 | Task              | Description                               | Dependencies    |
-|-------------------|-------------------------------------------|-----------------|
+| ----------------- | ----------------------------------------- | --------------- |
 | `flavor:generate` | Generate custom flavor from configuration | flavor:clone    |
 | `flavor:validate` | Validate generated flavor structure       | flavor:generate |
 | `flavor:unit`     | Run unit tests for flavor generation      | None            |
@@ -91,7 +91,7 @@ task flavor:test
 #### `flavor:generate`
 
 | Variable             | Default            | Description                                                 |
-|----------------------|--------------------|-------------------------------------------------------------|
+| -------------------- | ------------------ | ----------------------------------------------------------- |
 | `CONFIG_FILE`        | `.mega-linter.yml` | MegaLinter configuration file path                          |
 | `OUTPUT_DIR`         | `./custom-flavor`  | Output directory for generated files                        |
 | `FLAVOR_NAME`        | `shared-config`    | Name of the custom flavor                                   |
@@ -100,13 +100,13 @@ task flavor:test
 #### `flavor:validate`
 
 | Variable     | Default           | Description                       |
-|--------------|-------------------|-----------------------------------|
+| ------------ | ----------------- | --------------------------------- |
 | `FLAVOR_DIR` | `./custom-flavor` | Directory containing flavor files |
 
 #### `flavor:build`
 
 | Variable           | Default                                  | Description                              |
-|--------------------|------------------------------------------|------------------------------------------|
+| ------------------ | ---------------------------------------- | ---------------------------------------- |
 | `FLAVOR_DIR`       | `./custom-flavor`                        | Directory containing flavor files        |
 | `MEGALINTER_IMAGE` | `megalinter-local:v<MEGALINTER_VERSION>` | Full image reference (name:tag) to build |
 
@@ -157,6 +157,7 @@ custom-flavor/
 ### Dockerfile
 
 The generated Dockerfile:
+
 - Extends the upstream MegaLinter base image at the pinned version
 - Installs only the required linters (reducing image size)
 - Copies linter configurations
@@ -165,41 +166,26 @@ The generated Dockerfile:
 
 #### Dependency pinning
 
-`MEGALINTER_VERSION` pins the upstream *source*, not the resulting
-image. Upstream declares several dependencies without a version bound in
-`pyproject.toml`, and its runtime stage installs the project with a bare
-`uv pip install --system -e .`, which re-resolves those against PyPI
-every time the image is built. The `uv.lock` that upstream's own builder
-stage consumes never reaches the shipped image.
+`MEGALINTER_VERSION` pins the upstream _source_, not the resulting image. Upstream declares several dependencies without a version bound in `pyproject.toml`, and its runtime stage installs the project with a bare `uv pip install --system -e .`, which re-resolves those against PyPI every time the image is built. The `uv.lock` that upstream's own builder stage consumes never reaches the shipped image.
 
-So the generator (`scripts/build_flavor_dockerfile.py`,
-`_inject_locked_constraints`) exports that lock to a constraints file and
-applies it to the runtime install:
+So the generator (`scripts/build_flavor_dockerfile.py`, `_inject_locked_constraints`) exports that lock to a constraints file and applies it to the runtime install:
 
 ```dockerfile
 # builder stage — already binds uv.lock
-    uv sync --frozen --no-install-project \
+uv sync --frozen --no-install-project \
     && uv export -q --frozen --no-dev --no-hashes --no-emit-project \
         --format requirements.txt -o /constraints.txt
 
 # runtime stage
-    --mount=type=bind,from=build-ml-core,source=/constraints.txt,target=/constraints.txt \
-    uv pip install --system -c /constraints.txt -e .
+--mount=type=bind,from=build-ml-core,source=/constraints.txt,target=/constraints.txt \
+uv pip install --system -c /constraints.txt -e .
 ```
 
-`--no-hashes` matters: an editable install cannot be hashed, and one
-hashed entry would put uv in require-hashes mode and reject `-e .`.
+`--no-hashes` matters: an editable install cannot be hashed, and one hashed entry would put uv in require-hashes mode and reject `-e .`.
 
-This is not a hypothetical concern. On 2026-08-19 `multiprocessing-logging`
-released 0.4.0, which asserts that the multiprocessing start method is
-`fork`. The pinned `python:3.14` base defaults to `forkserver`
-([CPython gh-84559](https://github.com/python/cpython/issues/84559)), so
-MegaLinter began crashing on startup in `process_linters_parallel` — in
-an image built from an unchanged, pinned `MEGALINTER_VERSION`.
+This is not a hypothetical concern. On 2026-08-19 `multiprocessing-logging` released 0.4.0, which asserts that the multiprocessing start method is `fork`. The pinned `python:3.14` base defaults to `forkserver` ([CPython gh-84559](https://github.com/python/cpython/issues/84559)), so MegaLinter began crashing on startup in `process_linters_parallel` — in an image built from an unchanged, pinned `MEGALINTER_VERSION`.
 
-Like the other generator transforms, this one raises if its anchor text
-is missing from the upstream template, so a layout change upstream fails
-the build loudly instead of silently reverting to unpinned resolution.
+Like the other generator transforms, this one raises if its anchor text is missing from the upstream template, so a layout change upstream fails the build loudly instead of silently reverting to unpinned resolution.
 
 ## Docker Usage
 
@@ -255,7 +241,7 @@ jobs:
         run: |
           docker run --rm \
             -v "$(pwd)":/workspace:Z \
-            ghcr.io/myorg/megalinter:v9
+            ghcr.io/myorg/megalinter:v10
 ```
 
 ### Publishing Your Image
@@ -263,7 +249,7 @@ jobs:
 To share your custom flavor:
 
 1. **Build the image** using `task flavor:build`
-2. **Tag for your registry** (e.g., `ghcr.io/myorg/megalinter:v9`)
+2. **Tag for your registry** (e.g., `ghcr.io/myorg/megalinter:v10`)
 3. **Push to the registry** using `docker push`
 4. **Reference in workflows** using the published image tag
 
@@ -272,6 +258,7 @@ To share your custom flavor:
 ### Minimal Shared Configuration
 
 `.mega-linter.yml`:
+
 ```yaml
 ENABLE_LINTERS:
   - YAML_YAMLLINT
@@ -279,6 +266,7 @@ ENABLE_LINTERS:
 ```
 
 Generate:
+
 ```bash
 task flavor:generate \
   FLAVOR_NAME=docs-linter
@@ -287,6 +275,7 @@ task flavor:generate \
 ### Comprehensive Development Environment
 
 `.mega-linter.yml`:
+
 ```yaml
 ENABLE_LINTERS:
   - PYTHON_PYLINT
@@ -303,6 +292,7 @@ JAVASCRIPT_ES_ARGUMENTS: "--max-warnings 0"
 ```
 
 Generate and test:
+
 ```bash
 task flavor:generate \
   FLAVOR_NAME=fullstack-linter \
@@ -326,7 +316,7 @@ task flavor:generate \
   CONFIG_FILE=.mega-linter-enterprise.yml \
   FLAVOR_NAME=enterprise-standard \
   OUTPUT_DIR=./dist/enterprise-linter \
-  MEGALINTER_VERSION=9.6.0
+  MEGALINTER_VERSION=10.0.0
 
 # Validate
 task flavor:validate \
@@ -345,6 +335,7 @@ task flavor:build \
 #### Generation Failures
 
 **Error: "Configuration file not found"**
+
 ```bash
 # Verify file exists and path is correct
 ls -la .mega-linter.yml
@@ -352,6 +343,7 @@ task flavor:generate CONFIG_FILE=path/to/config.yml
 ```
 
 **Error: "Invalid output directory"**
+
 ```bash
 # Ensure parent directory exists
 mkdir -p ./custom-flavors
@@ -359,6 +351,7 @@ task flavor:generate OUTPUT_DIR=./custom-flavors/my-flavor
 ```
 
 **Error: "Unknown linter in ENABLE_LINTERS"**
+
 - Check linter name spelling against MegaLinter documentation
 - Verify the linter exists in the pinned MegaLinter version
 - Change the pinned version to one that includes it: `task flavor:generate MEGALINTER_VERSION=<version>`
@@ -366,6 +359,7 @@ task flavor:generate OUTPUT_DIR=./custom-flavors/my-flavor
 #### Validation Failures
 
 **Error: "Dockerfile missing required files"**
+
 ```bash
 # Regenerate with verbose output
 task flavor:generate
@@ -374,6 +368,7 @@ ls -la ./custom-flavor/
 ```
 
 **Error: "Docker build failed"**
+
 ```bash
 # Test build manually for detailed errors
 cd ./custom-flavor
@@ -383,12 +378,14 @@ docker build -t test-flavor .
 #### Docker Issues
 
 **Error: "Container engine not found"**
+
 ```bash
 # Check container engine availability
 podman --version || docker --version
 ```
 
 **Error: "Permission denied on Docker socket"**
+
 ```bash
 # Add user to docker group
 sudo usermod -aG docker $USER
@@ -398,18 +395,10 @@ systemctl --user start podman.socket
 
 **Error: "failed to authorize ... 400/429" from `auth.docker.io` during build**
 
-The generated Dockerfile pulls several linter builder stages from Docker
-Hub. On shared CI runner IPs, Docker Hub throttles anonymous pulls and the
-build fails resolving an image (commonly `mvdan/shfmt`). Mitigations applied
-in this repo's workflows:
+The generated Dockerfile pulls several linter builder stages from Docker Hub. On shared CI runner IPs, Docker Hub throttles anonymous pulls and the build fails resolving an image (commonly `mvdan/shfmt`). Mitigations applied in this repo's workflows:
 
-- Stages whose images are published to GHCR (`hadolint`, `gitleaks`) are
-  rewritten to `ghcr.io` automatically by `_qualify_from_image`.
-- The remaining Docker Hub stages (`shfmt`, `shellcheck`, and the
-  official `rust`/`alpine` images) are pulled authenticated when the
-  optional `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repository secrets are
-  set. The login step is skipped when they are absent (e.g. fork PRs), so
-  builds still run — just against the throttled anonymous quota.
+- Stages whose images are published to GHCR (`hadolint`, `gitleaks`) are rewritten to `ghcr.io` automatically by `_qualify_from_image`.
+- The remaining Docker Hub stages (`shfmt`, `shellcheck`, and the official `rust`/`alpine` images) are pulled authenticated when the optional `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repository secrets are set. The login step is skipped when they are absent (e.g. fork PRs), so builds still run — just against the throttled anonymous quota.
 
 ### Debug Mode
 
@@ -434,11 +423,13 @@ task flavor:validate
 ### Performance Issues
 
 **Large image builds**
+
 - Use newer base images with pre-installed tools
 - Consider multi-stage builds for production
 - Limit `ENABLE_LINTERS` to essential tools only
 
 **Slow generation**
+
 - Check disk space: `df -h`
 - Verify template directory permissions
 - Use SSD storage for temp directories
@@ -488,7 +479,7 @@ Include in your deployment pipeline:
 name: Build Custom Flavor
 on:
   push:
-    paths: ['.mega-linter*.yml']
+    paths: [".mega-linter*.yml"]
 
 jobs:
   build:
@@ -523,4 +514,4 @@ jobs:
 
 ---
 
-*Generated by MegaLinter Custom Flavor Generation System*
+_Generated by MegaLinter Custom Flavor Generation System_

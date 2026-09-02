@@ -89,7 +89,7 @@ jobs:
           echo "Base image: ${BASE_IMAGE}"
 
           # Extract registry/repo and tag from image reference.
-          # e.g. ghcr.io/oxsecurity/megalinter:v9 -> repo=oxsecurity/megalinter tag=v9
+          # e.g. ghcr.io/oxsecurity/megalinter:v10 -> repo=oxsecurity/megalinter tag=v10
           REPO="${BASE_IMAGE#ghcr.io/}"
           REPO="${REPO%%:*}"
           TAG="${BASE_IMAGE##*:}"
