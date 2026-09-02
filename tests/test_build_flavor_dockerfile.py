@@ -38,6 +38,9 @@ replace_section = (
 build_apk_section = (
     build_flavor_dockerfile.build_apk_section
 )
+build_apk_build_sections = (
+    build_flavor_dockerfile.build_apk_build_sections
+)
 build_pipvenv_section = (
     build_flavor_dockerfile.build_pipvenv_section
 )
@@ -576,6 +579,145 @@ class TestBuildApkSection:
 
 
 # ── TestBuildPipvenvSection ───────────────────────
+
+
+class TestApkBuildPackages:
+    """v10 build-only packages install and are removed again.
+
+    Upstream stopped shipping the compile toolchain in its images and
+    moved those packages to `install.apk_build`, installed as an apk
+    virtual group and deleted once the pip/gem/cargo compiles are done
+    (upstream Dockerfile ~584-593). A generated flavor must do the same,
+    or a linter needing a native build has no compiler.
+    """
+
+    # apk_build here uses packages that are NOT in BASE_APK_PACKAGES.
+    # The base list already ships gcc/make/musl-dev/libffi-dev
+    # unconditionally, so asserting on those would prove nothing about
+    # apk_build handling.
+    DESCRIPTOR = {
+        "descriptor_id": "LUA",
+        "linters": [
+            {
+                "linter_name": "luacheck",
+                "install": {
+                    "apk": ["lua5.4"],
+                    "apk_build": ["re2-dev", "py3-pybind11-dev"],
+                    "gem": ["luacheck"],
+                },
+            },
+        ],
+    }
+
+    def test_collect_installs_gathers_apk_build(self):
+        result = collect_installs(
+            [self.DESCRIPTOR], ["LUA_LUACHECK"],
+        )
+        assert result["apk_build"] == ["re2-dev", "py3-pybind11-dev"]
+
+    def test_apk_build_excluded_from_persistent_apk(self):
+        # Build-only packages must not land in the persistent apk list,
+        # or they ship in the final image and defeat the purpose.
+        result = collect_installs(
+            [self.DESCRIPTOR], ["LUA_LUACHECK"],
+        )
+        assert "re2-dev" not in result["apk"]
+        assert "py3-pybind11-dev" not in result["apk"]
+        assert "lua5.4" in result["apk"]
+
+    def test_apk_build_deduplicated(self):
+        second = {
+            "descriptor_id": "PERL",
+            "linters": [
+                {
+                    "linter_name": "perlcritic",
+                    "install": {"apk_build": ["re2-dev", "perl-dev"]},
+                },
+            ],
+        }
+        result = collect_installs(
+            [self.DESCRIPTOR, second],
+            ["LUA_LUACHECK", "PERL_PERLCRITIC"],
+        )
+        assert result["apk_build"].count("re2-dev") == 1
+
+    def test_descriptor_level_apk_build_collected(self):
+        descriptor = {
+            "descriptor_id": "R",
+            "install": {"apk_build": ["g++"]},
+            "linters": [{"linter_name": "lintr"}],
+        }
+        result = collect_installs([descriptor], ["R_LINTR"])
+        assert result["apk_build"] == ["g++"]
+
+    def test_sections_install_and_delete_the_virtual_group(self):
+        opened, closed = build_apk_build_sections(
+            ["re2-dev", "perl-dev"],
+        )
+        assert "--virtual .flavor-build-deps" in opened
+        assert "re2-dev" in opened
+        assert "perl-dev" in opened
+        assert "apk del .flavor-build-deps" in closed
+
+    def test_open_block_has_no_dangling_continuation(self):
+        # A trailing " \" on the final package would swallow the next
+        # Dockerfile instruction into this RUN.
+        opened, _ = build_apk_build_sections(["re2-dev", "perl-dev"])
+        assert not opened.rstrip("\n").endswith("\\")
+
+    def test_sections_empty_when_no_build_packages(self):
+        opened, closed = build_apk_build_sections([])
+        assert opened == ""
+        assert closed == ""
+
+    def test_generation_brackets_the_compiling_sections(
+        self, tmp_path,
+    ):
+        template_file = tmp_path / "Dockerfile"
+        template_file.write_text(
+            MINIMAL_TEMPLATE, encoding="utf-8",
+        )
+        installs = {
+            "apk": [],
+            "apk_build": ["re2-dev", "perl-dev"],
+            "npm": [],
+            "pip": {"PYTHON_X": ["x"]},
+            "gem": [],
+            "cargo": [],
+            "dockerfile": [],
+        }
+        result = generate_dockerfile(
+            template_file, installs, "test",
+        )
+        # Added before the compiles, deleted after them.
+        assert result.index(
+            "--virtual .flavor-build-deps",
+        ) < result.index("uv venv")
+        assert result.index("uv venv") < result.index(
+            "apk del .flavor-build-deps",
+        )
+
+    def test_generation_emits_nothing_without_build_packages(
+        self, tmp_path,
+    ):
+        # This repo's own flavor selects no linter declaring apk_build,
+        # so adding the feature must not change its generated output.
+        template_file = tmp_path / "Dockerfile"
+        template_file.write_text(
+            MINIMAL_TEMPLATE, encoding="utf-8",
+        )
+        installs = {
+            "apk": [],
+            "npm": [],
+            "pip": {},
+            "gem": [],
+            "cargo": [],
+            "dockerfile": [],
+        }
+        result = generate_dockerfile(
+            template_file, installs, "test",
+        )
+        assert ".flavor-build-deps" not in result
 
 
 class TestBuildPipvenvSection:
