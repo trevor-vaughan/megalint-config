@@ -33,8 +33,17 @@ CHECKOV_ROOT_CONFIG = REPO_ROOT / ".checkov.yml"
 CHECKOV_SHARED_CONFIG = REPO_ROOT / ".mega-linter.d" / ".checkov.yml"
 EXTRACTOR = REPO_ROOT / ".taskfiles" / "scripts" / "changed-enable-linters.sh"
 MEGALINTER_CONFIG_PY = (
-    REPO_ROOT / ".cache" / "megalinter-v9.6.0" / "megalinter" / "config.py"
+    REPO_ROOT / ".cache" / "megalinter-v10.0.0" / "megalinter" / "config.py"
 )
+MEGALINTER_LINTER_PY = (
+    REPO_ROOT / ".cache" / "megalinter-v10.0.0" / "megalinter" / "Linter.py"
+)
+
+# Upstream's DEFAULT_LINTER_TIMEOUT_SECONDS (megalinter/Linter.py). Copied
+# rather than read from the clone so the timeout assertions stay in the
+# clone-free structural gate; test_default_timeout_matches_upstream keeps the
+# copy honest whenever the clone is present.
+DEFAULT_LINTER_TIMEOUT_SECONDS = 300
 
 
 def _load_megalinter_config():
@@ -142,14 +151,18 @@ def test_kics_removed_from_enabled_linters(base_config: dict):
 
     The slim flavor is generated from ENABLE_LINTERS alone (see
     scripts/build_flavor_dockerfile.py), so absence here is what keeps the
-    KICS binary out of the published image. The DISABLE_LINTERS entry is
-    documentation and defense-in-depth. IaC coverage is retained via
+    KICS binary out of the published image. IaC coverage is retained via
     REPOSITORY_CHECKOV and REPOSITORY_TRIVY.
+
+    MegaLinter v10 removed REPOSITORY_KICS outright, so the former
+    DISABLE_LINTERS entry is gone: it no longer names a linter that can
+    run, and keeping it would cost a startup notice on every run without
+    adding any defence. Absence from ENABLE_LINTERS is the assertion that
+    still carries weight, and it is the one that was ever load-bearing.
+    The rationale now lives as a comment in .mega-linter.yml.
     """
     enable = validate_config.linter_list(base_config, "ENABLE_LINTERS")
-    disable = validate_config.linter_list(base_config, "DISABLE_LINTERS")
     assert "REPOSITORY_KICS" not in enable
-    assert "REPOSITORY_KICS" in disable
 
 
 def test_rust_clippy_removed_from_enabled_linters(base_config: dict):
@@ -181,7 +194,7 @@ def test_checkov_skips_github_configuration_framework(config_path: Path):
     dir resolved against the current working directory. MegaLinter runs Checkov
     with the workspace mounted read-only (.taskfiles/scripts/megalint-run.sh),
     so persist_all_confs() crashes with EROFS ("Read-only file system:
-    '.megalinter_github_conf'"). MegaLinter v9.6.0's
+    '.megalinter_github_conf'"). MegaLinter v10.0.0's
     CheckovLinter.before_lint_files() overwrites the CKV_GITHUB_CONF_DIR_NAME
     env var the runner injects to redirect that dir onto the tmpfs, defeating
     the runner-level workaround, so the framework must be skipped in config.
@@ -576,3 +589,90 @@ def test_resolve_ref_strips_only_pointer_prefix():
     schema = {"#foo": {"ok": 1}}
     result = validate_config._resolve_ref(schema, "#/#foo")  # noqa: SLF001
     assert result == {"ok": 1}
+
+
+# Linters MegaLinter removed in v10.0.0, from upstream's
+# megalinter/removed_linters.py (the single source of truth).
+#
+# The descriptor-backed tests only catch removed linters whose whole
+# descriptor was deleted (MAKEFILE, API). v10 deliberately keeps every
+# removed key valid in the JSON schema so existing configs still parse,
+# so a linter like MARKDOWN_MARKDOWN_LINK_CHECK -- whose descriptor
+# survives -- passes every other check while doing nothing but emitting
+# a startup notice. This list is what catches those.
+REMOVED_IN_V10 = frozenset({
+    "API_SPECTRAL",
+    "JSON_ESLINT_PLUGIN_JSONC",
+    "LUA_SELENE",
+    "MAKEFILE_CHECKMAKE",
+    "MARKDOWN_MARKDOWN_LINK_CHECK",
+    "MARKDOWN_REMARK_LINT",
+    "PUPPET_PUPPET_LINT",
+    "REPOSITORY_GITLEAKS",
+    "REPOSITORY_KICS",
+    "SALESFORCE_LIGHTNING_FLOW_SCANNER",
+    "SALESFORCE_SFDX_SCANNER_APEX",
+    "SALESFORCE_SFDX_SCANNER_AURA",
+    "SALESFORCE_SFDX_SCANNER_LWC",
+    "SQL_TSQLLINT",
+    "TERRAFORM_TERRASCAN",
+})
+
+
+def test_no_removed_linters_referenced(base_config: dict):
+    enable = validate_config.linter_list(base_config, "ENABLE_LINTERS")
+    disable = validate_config.linter_list(base_config, "DISABLE_LINTERS")
+    referenced = set(enable) | set(disable)
+    assert not (referenced & REMOVED_IN_V10)
+
+
+def test_disable_priority_is_set(base_config: dict):
+    """Lets an EXTENDS consumer trim the inherited ENABLE_LINTERS list.
+
+    Without this, DISABLE_LINTERS is ignored for anything the parent
+    already enabled, and a consumer has to restate the whole list.
+    """
+    assert base_config.get("ENABLE_DISABLE_LINTERS_PRIORITY") == "DISABLE"
+
+
+@pytest.mark.parametrize(
+    "linter",
+    [
+        "REPOSITORY_TRIVY",
+        "REPOSITORY_GRYPE",
+        "REPOSITORY_CHECKOV",
+        "REPOSITORY_TRUFFLEHOG",
+        "GO_GOLANGCI_LINT",
+        "SPELL_LYCHEE",
+    ],
+)
+def test_slow_linters_have_explicit_timeouts(base_config: dict, linter: str):
+    """v10 kills a linter at 300s by default and reports exit code 124.
+
+    These scan the whole repository or download a vulnerability database
+    on a cold cache, so the default would turn a healthy run red here and
+    in every repository inheriting this config.
+    """
+    key = f"{linter}_TIMEOUT_SECONDS"
+    assert key in base_config, key
+    assert base_config[key] > DEFAULT_LINTER_TIMEOUT_SECONDS, key
+
+
+@pytest.mark.skipif(
+    not MEGALINTER_LINTER_PY.exists(),
+    reason="pinned MegaLinter source absent (run task flavor:clone)",
+)
+def test_default_timeout_matches_upstream():
+    """The copied default must track the pinned MegaLinter release.
+
+    The overrides above are only meaningful as "longer than the default". If a
+    version bump moves that default and this copy is not updated with it, the
+    assertion keeps comparing against a stale number and proves nothing.
+    """
+    match = re.search(
+        r"^DEFAULT_LINTER_TIMEOUT_SECONDS = (\d+)$",
+        MEGALINTER_LINTER_PY.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert match, f"DEFAULT_LINTER_TIMEOUT_SECONDS not found in {MEGALINTER_LINTER_PY}"
+    assert int(match.group(1)) == DEFAULT_LINTER_TIMEOUT_SECONDS
