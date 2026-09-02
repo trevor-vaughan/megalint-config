@@ -688,11 +688,18 @@ MINIMAL_TEMPLATE = """\
 #FROM__END
 FROM python:3.14-alpine3.24 AS build-ml-core
 # Install dependencies
+#UV_SYNC__START
 RUN --mount=type=cache,target=/root/.cache/uv \\
     --mount=type=bind,source=uv.lock,target=uv.lock \\
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \\
-    uv sync --frozen --no-install-project
-FROM oxsecurity/megalinter:v9
+    uv sync --frozen --no-install-project --extra llm
+# Copy the project into the image
+COPY . .
+# Sync the project
+RUN --mount=type=cache,target=/root/.cache/uv \\
+    uv sync --frozen --extra llm
+#UV_SYNC__END
+FROM oxsecurity/megalinter:v10
 # PATH for golang & python
 ENV GOROOT=/usr/lib/go \\
     GOPATH=/go
@@ -713,9 +720,11 @@ ENV GOROOT=/usr/lib/go \\
 #OTHER__START
 #OTHER__END
 COPY --from=build-ml-core megalinter /megalinter/
+#PIP_PROJECT__START
 RUN --mount=type=cache,target=/root/.cache/uv,from=build-ml-core \\
     --mount=from=uv,source=/uv,target=/bin/uv \\
-    uv pip install --system -e .
+    uv pip install --system -e ".[llm]"
+#PIP_PROJECT__END
 #FLAVOR__START
 ENV MEGALINTER_FLAVOR=all
 #FLAVOR__END
@@ -1215,18 +1224,22 @@ class TestInjectLockedConstraints:
     """
 
     BUILDER = (
+        "#UV_SYNC__START\n"
         "# Install dependencies\n"
         "RUN --mount=type=cache,target=/root/.cache/uv \\\n"
         "    --mount=type=bind,source=uv.lock,target=uv.lock \\\n"
         "    --mount=type=bind,source=pyproject.toml,"
         "target=pyproject.toml \\\n"
-        "    uv sync --frozen --no-install-project\n"
+        "    uv sync --frozen --no-install-project --extra llm\n"
+        "#UV_SYNC__END\n"
     )
     INSTALL = (
+        "#PIP_PROJECT__START\n"
         "RUN --mount=type=cache,target=/root/.cache/uv,"
         "from=build-ml-core \\\n"
         "    --mount=from=uv,source=/uv,target=/bin/uv \\\n"
-        "    uv pip install --system -e .\n"
+        '    uv pip install --system -e ".[llm]"\n'
+        "#PIP_PROJECT__END\n"
     )
 
     def _dockerfile(self):
@@ -1252,8 +1265,17 @@ class TestInjectLockedConstraints:
 
     def test_runtime_install_applies_the_constraints(self):
         result = _inject_locked_constraints(self._dockerfile())
-        assert "uv pip install --system -c /constraints.txt -e ." in result
-        assert "uv pip install --system -e ." not in result
+        assert (
+            'uv pip install --system -c /constraints.txt -e ".[llm]"'
+        ) in result
+        assert 'uv pip install --system -e ".[llm]"' not in result
+
+    def test_runtime_install_keeps_the_upstream_target_spec(self):
+        # v10 installs `-e ".[llm]"`, not `-e .`. The constraints flag
+        # must be inserted without rewriting what upstream installs, or
+        # the llm extra silently stops shipping.
+        result = _inject_locked_constraints(self._dockerfile())
+        assert '-e ".[llm]"' in result
 
     def test_runtime_install_mounts_constraints_from_builder(self):
         result = _inject_locked_constraints(self._dockerfile())
@@ -1274,20 +1296,41 @@ class TestInjectLockedConstraints:
         result = _inject_locked_constraints(self._dockerfile())
         assert "uv export -q --frozen" in result
 
+    def test_uv_sync_line_is_not_split_by_the_export(self):
+        # v10 appends `--extra llm` to the uv sync line. A substring
+        # anchor still matches, so the guard passes, but the export is
+        # injected *before* the trailing flag: `--extra llm` ends up on
+        # `uv export` and `uv sync` silently loses it. The export must
+        # attach after the complete line.
+        result = _inject_locked_constraints(self._dockerfile())
+        assert "uv sync --frozen --no-install-project --extra llm" in result
+        assert "-o /constraints.txt --extra llm" not in result
+
     def test_is_idempotent(self):
         once = _inject_locked_constraints(self._dockerfile())
         twice = _inject_locked_constraints(once)
         assert once == twice
         assert twice.count("uv export") == 1
 
-    def test_raises_when_uv_sync_block_absent(self):
+    def test_raises_when_uv_sync_section_absent(self):
         dockerfile = f"FROM base\n{self.INSTALL}"
-        with pytest.raises(ValueError, match="uv sync block not found"):
+        with pytest.raises(ValueError, match="#UV_SYNC__START"):
             _inject_locked_constraints(dockerfile)
 
-    def test_raises_when_uv_install_block_absent(self):
+    def test_raises_when_pip_project_section_absent(self):
         dockerfile = f"FROM base\n{self.BUILDER}"
-        with pytest.raises(ValueError, match="uv pip install block not found"):
+        with pytest.raises(ValueError, match="#PIP_PROJECT__START"):
+            _inject_locked_constraints(dockerfile)
+
+    def test_raises_when_sync_line_missing_from_section(self):
+        # The section is present but upstream renamed the command:
+        # fail loudly rather than emit an unconstrained Dockerfile.
+        dockerfile = (
+            "FROM base\n"
+            "#UV_SYNC__START\nRUN echo nothing\n#UV_SYNC__END\n"
+            f"{self.INSTALL}"
+        )
+        with pytest.raises(ValueError, match="No line starting with"):
             _inject_locked_constraints(dockerfile)
 
     def test_full_generation_constrains_runtime_install(
@@ -1309,5 +1352,7 @@ class TestInjectLockedConstraints:
             template_file, installs, "test",
         )
         assert "uv export -q --frozen" in result
-        assert "uv pip install --system -c /constraints.txt -e ." in result
-        assert "uv pip install --system -e ." not in result
+        assert (
+            'uv pip install --system -c /constraints.txt -e ".[llm]"'
+        ) in result
+        assert 'uv pip install --system -e ".[llm]"' not in result

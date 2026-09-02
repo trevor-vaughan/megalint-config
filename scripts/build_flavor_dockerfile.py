@@ -742,10 +742,66 @@ def _inject_gotoolchain(dockerfile: str) -> str:
     )
 
 
-# Exact anchors from the upstream MegaLinter base Dockerfile.
-# The builder stage binds uv.lock; the runtime stage does not.
-UV_SYNC_BLOCK = "    uv sync --frozen --no-install-project"
-UV_INSTALL_BLOCK = "    uv pip install --system -e ."
+def _find_line_in_section(
+    dockerfile: str,
+    tag: str,
+    prefix: str,
+) -> str:
+    """Return the whole line starting with prefix inside a section.
+
+    Upstream marks its patchable regions with ``#TAG__START`` /
+    ``#TAG__END``. Searching within those bounds, and returning the
+    *complete* matched line, keeps an injection correct when upstream
+    appends flags to a command.
+
+    That is not hypothetical. v9's line was::
+
+        uv sync --frozen --no-install-project
+
+    and v10's is::
+
+        uv sync --frozen --no-install-project --extra llm
+
+    A bare substring anchor still matched, so the old guard passed, but
+    the injection landed mid-line: ``--extra llm`` was carried onto the
+    appended ``uv export`` and ``uv sync`` silently stopped installing
+    the extra. Matching a whole line inside a named section makes that
+    class of drift impossible.
+
+    Raises ValueError if the section or the line is absent, so a
+    template layout change fails the build loudly instead of silently
+    producing a wrong Dockerfile.
+    """
+    pattern = re.compile(
+        rf"#{tag}__START\n(.*?)#{tag}__END",
+        re.DOTALL,
+    )
+    match = pattern.search(dockerfile)
+    if match is None:
+        msg = (
+            f"Section #{tag}__START/#{tag}__END not found in Dockerfile "
+            f"template. The upstream template layout changed — update "
+            f"build_flavor_dockerfile.py."
+        )
+        raise ValueError(msg)
+    for line in match.group(1).split("\n"):
+        if line.startswith(prefix):
+            return line
+    msg = (
+        f"No line starting with {prefix!r} inside #{tag}__START. The "
+        f"upstream template layout changed — update "
+        f"build_flavor_dockerfile.py."
+    )
+    raise ValueError(msg)
+
+
+# Upstream marks these regions with named section comments (added in
+# MegaLinter v10). Anchoring on the markers plus a line prefix survives
+# upstream appending flags to either command.
+UV_SYNC_TAG = "UV_SYNC"
+UV_SYNC_PREFIX = "    uv sync --frozen --no-install-project"
+PIP_PROJECT_TAG = "PIP_PROJECT"
+PIP_INSTALL_PREFIX = "    uv pip install --system "
 
 # --no-emit-project drops megalinter itself (installed via -e .).
 # --no-hashes is required: an editable install cannot be hashed, and
@@ -764,9 +820,7 @@ CONSTRAINTS_MOUNT = (
     "source=/constraints.txt,target=/constraints.txt \\\n"
 )
 
-UV_INSTALL_CONSTRAINED = (
-    "    uv pip install --system -c /constraints.txt -e ."
-)
+CONSTRAINTS_FLAG = "-c /constraints.txt "
 
 
 def _inject_locked_constraints(dockerfile: str) -> str:
@@ -795,32 +849,33 @@ def _inject_locked_constraints(dockerfile: str) -> str:
     layout change fails the build loudly instead of silently
     reverting to unpinned resolution.
     """
-    if UV_INSTALL_CONSTRAINED in dockerfile:
+    if CONSTRAINTS_FLAG in dockerfile:
         return dockerfile
-    if UV_SYNC_BLOCK not in dockerfile:
-        msg = (
-            "uv sync block not found in Dockerfile template; cannot "
-            "export locked constraints. The upstream template layout "
-            "changed — update UV_SYNC_BLOCK in "
-            "build_flavor_dockerfile.py."
-        )
-        raise ValueError(msg)
-    if UV_INSTALL_BLOCK not in dockerfile:
-        msg = (
-            "uv pip install block not found in Dockerfile template; "
-            "cannot apply locked constraints. The upstream template "
-            "layout changed — update UV_INSTALL_BLOCK in "
-            "build_flavor_dockerfile.py."
-        )
-        raise ValueError(msg)
+
+    sync_line = _find_line_in_section(
+        dockerfile, UV_SYNC_TAG, UV_SYNC_PREFIX,
+    )
+    install_line = _find_line_in_section(
+        dockerfile, PIP_PROJECT_TAG, PIP_INSTALL_PREFIX,
+    )
+
+    # Append the export after the *complete* sync line, so any trailing
+    # upstream flags stay attached to `uv sync`.
     dockerfile = dockerfile.replace(
-        UV_SYNC_BLOCK,
-        f"{UV_SYNC_BLOCK}{UV_EXPORT_CMD}",
+        sync_line,
+        f"{sync_line}{UV_EXPORT_CMD}",
+        1,
+    )
+    # Insert the constraints flag after `--system `, preserving whatever
+    # target spec upstream installs (v10: `-e ".[llm]"`).
+    constrained = install_line.replace(
+        PIP_INSTALL_PREFIX,
+        f"{PIP_INSTALL_PREFIX}{CONSTRAINTS_FLAG}",
         1,
     )
     return dockerfile.replace(
-        UV_INSTALL_BLOCK,
-        f"{CONSTRAINTS_MOUNT}{UV_INSTALL_CONSTRAINED}",
+        install_line,
+        f"{CONSTRAINTS_MOUNT}{constrained}",
         1,
     )
 
