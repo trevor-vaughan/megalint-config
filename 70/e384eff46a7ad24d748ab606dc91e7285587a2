@@ -1,0 +1,25 @@
+pyproject.toml
+  h_4db53f42b9be42 3
+uv.lock
+  h_4db53f42b9be42 134
+CHANGELOG.md
+  h_4db53f42b9be42 8-28,30-65
+  h_4db53f42b9be42 29
+docs/custom-flavor-generation.md
+  h_4db53f42b9be42 166,191-216
+scripts/build_flavor_dockerfile.py
+  h_4db53f42b9be42 723-768,1057
+tests/test_build_flavor_dockerfile.py
+  h_4db53f42b9be42 84-86,1505-1619
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "70e384eff46a7ad24d748ab606dc91e7285587a2",
+  "prompts": {},
+  "humans": {
+    "h_4db53f42b9be42": {
+      "author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}
