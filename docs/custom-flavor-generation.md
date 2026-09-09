@@ -163,6 +163,7 @@ The generated Dockerfile:
 - Copies linter configurations
 - Sets appropriate labels and metadata
 - Pins MegaLinter's Python dependencies to upstream's `uv.lock`
+- Relaxes upstream's exact Alpine package pins to a minimum-version floor
 
 #### Dependency pinning
 
@@ -186,6 +187,32 @@ uv pip install --system -c /constraints.txt -e .
 This is not a hypothetical concern. On 2026-08-19 `multiprocessing-logging` released 0.4.0, which asserts that the multiprocessing start method is `fork`. The pinned `python:3.14` base defaults to `forkserver` ([CPython gh-84559](https://github.com/python/cpython/issues/84559)), so MegaLinter began crashing on startup in `process_linters_parallel` — in an image built from an unchanged, pinned `MEGALINTER_VERSION`.
 
 Like the other generator transforms, this one raises if its anchor text is missing from the upstream template, so a layout change upstream fails the build loudly instead of silently reverting to unpinned resolution.
+
+#### Alpine package pins
+
+Some upstream descriptors pin an Alpine package to one exact build — `go.megalinter-descriptor.yml` emits `apk add --no-cache go=${GO_ALPINE_VERSION}` with `GO_ALPINE_VERSION=1.26.3-r0`, and `repository.megalinter-descriptor.yml` does the same for `osv-scanner`. Alpine's repositories carry only the newest build of a package per branch, so that pin has a shelf life: the day Alpine rebuilt Go for 3.24, every build of the pinned line started failing with
+
+```text
+ERROR: unable to select packages:
+  go-1.26.8-r0:
+    breaks: world[go=1.26.3-r0]
+```
+
+Upstream never sees this — it rebuilds daily and Renovate moves the pin forward. A flavor frozen at a released `MEGALINTER_VERSION` has no such escape hatch, so a release tag that built the day it was cut stops building weeks later with nothing in this repository having changed.
+
+The generator (`_relax_apk_version_pins`) therefore rewrites the atom to a floor while leaving the `ARG` alone:
+
+```dockerfile
+ARG GO_ALPINE_VERSION=1.26.3-r0     # unchanged: the version upstream tested
+RUN apk add --no-cache \
+    "go>=${GO_ALPINE_VERSION}"      # was: go=${GO_ALPINE_VERSION}
+```
+
+apk still refuses anything older than the upstream-tested version, and accepts the rebuilds Alpine publishes within the branch. Nothing is lost in reproducibility that was not already gone: the generated `APK` section runs `apk -U --no-cache upgrade` across the whole base image on every build. Go's exact patch level matters less still, because the image sets `GOTOOLCHAIN=auto` and lets each module fetch the toolchain its `go.mod` requires.
+
+The quotes are load-bearing. Unquoted, the shell parses `go>=1.26.3-r0` as `go` plus a redirect into a file named `=1.26.3-r0`: apk installs whatever version is current, the floor is gone, and the build still exits zero.
+
+To move the floor deliberately, bump `MEGALINTER_VERSION` to an upstream release whose descriptor carries the version you want.
 
 ## Docker Usage
 

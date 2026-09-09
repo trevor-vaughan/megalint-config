@@ -720,6 +720,52 @@ def _wget_to_curl(line: str) -> str:
     )
 
 
+# An apk atom pinned to one exact build, e.g. ``go=${GO_ALPINE_VERSION}``
+# or ``osv-scanner=2.3.8-r1``. The package name must start a shell word,
+# so a URL query (``?v=1.2.3-r0``) or a long option (``--tries=5``) is not
+# matched, and must be lowercase, so a shell assignment (``ARCH=x86_64``)
+# is not matched either.
+APK_EXACT_PIN_RE = re.compile(
+    r"(?<![^\s])"
+    r"([a-z][a-z0-9._+-]*)="
+    r"(\$\{[A-Z][A-Z0-9_]*\}|[0-9][A-Za-z0-9._]*(?:-r[0-9]+)?)"
+    r"(?=\s|$)",
+    re.MULTILINE,
+)
+
+
+def _relax_apk_version_pins(line: str) -> str:
+    """Turn an exact apk version pin into a minimum-version floor.
+
+    Alpine's repositories carry only the newest build of a package for a
+    branch. An exact pin therefore expires: once Alpine rebuilt go for
+    3.24, upstream's ``apk add --no-cache go=1.26.3-r0`` started failing
+    with ``go-1.26.8-r0 breaks: world[go=1.26.3-r0]``. Upstream rebuilds
+    daily and lets Renovate chase the pin, so the window never opens for
+    them; a flavor frozen at a released ``MEGALINTER_VERSION`` has no
+    such escape hatch, and a tag that built the day it was cut stops
+    building weeks later without anything in this repository changing.
+
+    Rewriting the atom to ``pkg>=<version>`` keeps upstream's tested
+    version as a floor — apk still refuses an older build — while
+    accepting the rebuilds Alpine publishes within a branch. The
+    generated image is no less reproducible than before: the APK section
+    already runs ``apk -U --no-cache upgrade`` over the whole base.
+
+    The rewritten atom must be quoted. Unquoted, the shell reads
+    ``go>=1.26.3-r0`` as ``go`` plus a redirect into a file named
+    ``=1.26.3-r0``, which installs the current version and drops the
+    floor silently, with a zero exit code.
+
+    Lines that do not run ``apk add`` are returned unchanged, so the
+    ``ARG`` that carries the upstream version keeps its exact value.
+    Idempotent: an already-relaxed atom no longer matches.
+    """
+    if "apk add" not in line:
+        return line
+    return APK_EXACT_PIN_RE.sub(r'"\1>=\2"', line)
+
+
 # renovate: datasource=crate depName=sarif-fmt
 SARIF_FMT_VERSION = "0.8.0"
 
@@ -1008,7 +1054,7 @@ def generate_dockerfile(
         copy_content += "\n"
 
     other_content = "\n".join(
-        _wget_to_curl(line)
+        _relax_apk_version_pins(_wget_to_curl(line))
         for line in classified["other_lines"]
     )
     if other_content:
