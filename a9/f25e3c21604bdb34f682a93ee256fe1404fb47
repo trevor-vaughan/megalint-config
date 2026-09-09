@@ -1,0 +1,18 @@
+CHANGELOG.md
+  h_4db53f42b9be42 8-64
+pyproject.toml
+  h_4db53f42b9be42 3
+uv.lock
+  h_4db53f42b9be42 134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a9f25e3c21604bdb34f682a93ee256fe1404fb47",
+  "prompts": {},
+  "humans": {
+    "h_4db53f42b9be42": {
+      "author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}
