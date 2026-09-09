@@ -81,6 +81,9 @@ _qualify_from_image = (
 _dedup_copy_lines = (
     build_flavor_dockerfile._dedup_copy_lines  # noqa: SLF001 — test exercises private helper
 )
+_relax_apk_version_pins = (
+    build_flavor_dockerfile._relax_apk_version_pins  # noqa: SLF001 — test exercises private helper
+)
 SARIF_FMT_VERSION = (
     build_flavor_dockerfile.SARIF_FMT_VERSION
 )
@@ -1499,3 +1502,118 @@ class TestInjectLockedConstraints:
             'uv pip install --system -c /constraints.txt -e ".[llm]"'
         ) in result
         assert 'uv pip install --system -e ".[llm]"' not in result
+
+
+# ── TestRelaxApkVersionPins ───────────────────────
+
+
+class TestRelaxApkVersionPins:
+    """Exact apk pins inherited from descriptors expire.
+
+    Alpine's repositories carry only the newest build of a
+    package per branch, so ``apk add go=1.26.3-r0`` stops
+    resolving the moment Alpine rebuilds go: apk reports
+    ``go-1.26.8-r0 breaks: world[go=1.26.3-r0]``. Upstream
+    rebuilds daily and lets Renovate chase the pin; a flavor
+    frozen at a released MEGALINTER_VERSION cannot, so a tag
+    that built when it was cut stops building weeks later.
+    Rewriting the atom to a ``>=`` floor keeps upstream's
+    tested minimum and tolerates Alpine's rebuilds.
+    """
+
+    GO_BLOCK = (
+        "RUN apk add --no-cache \\\n"
+        "    go=${GO_ALPINE_VERSION}"
+    )
+
+    def test_variable_pin_becomes_quoted_floor(self):
+        assert _relax_apk_version_pins(self.GO_BLOCK) == (
+            "RUN apk add --no-cache \\\n"
+            '    "go>=${GO_ALPINE_VERSION}"'
+        )
+
+    def test_floor_is_quoted_against_shell_redirection(self):
+        # Unquoted, `go>=1.2` is parsed by the shell as `go`
+        # plus a redirect into a file named `=1.2`: apk then
+        # installs whatever is current and the floor is lost
+        # silently, with a zero exit code.
+        result = _relax_apk_version_pins(self.GO_BLOCK)
+        assert result.count('"') == 2  # noqa: PLR2004
+        assert "\n    go>=" not in result
+
+    def test_literal_pin_becomes_quoted_floor(self):
+        block = (
+            "RUN apk add --no-cache \\\n"
+            "    osv-scanner=2.3.8-r1"
+        )
+        assert _relax_apk_version_pins(block) == (
+            "RUN apk add --no-cache \\\n"
+            '    "osv-scanner>=2.3.8-r1"'
+        )
+
+    def test_pin_inline_with_the_apk_add_relaxed(self):
+        block = (
+            "RUN apk add --no-cache"
+            " go=${GO_ALPINE_VERSION} bash"
+        )
+        assert _relax_apk_version_pins(block) == (
+            "RUN apk add --no-cache"
+            ' "go>=${GO_ALPINE_VERSION}" bash'
+        )
+
+    def test_unpinned_package_untouched(self):
+        block = "RUN apk add --no-cache dotnet10-sdk"
+        assert _relax_apk_version_pins(block) == block
+
+    def test_non_apk_block_untouched(self):
+        # The ARG default records the version upstream tested
+        # and becomes the floor; it must keep its exact form.
+        block = "ARG GO_ALPINE_VERSION=1.26.3-r0"
+        assert _relax_apk_version_pins(block) == block
+
+    def test_shell_assignment_in_apk_block_untouched(self):
+        block = (
+            "RUN apk add --no-cache curl && \\\n"
+            "    ARCH=x86_64 ./install.sh"
+        )
+        assert _relax_apk_version_pins(block) == block
+
+    def test_url_query_in_apk_block_untouched(self):
+        block = (
+            "RUN apk add --no-cache curl && \\\n"
+            "    curl -fsSL https://e.example/i.sh?v=1.2.3-r0"
+            " | sh"
+        )
+        assert _relax_apk_version_pins(block) == block
+
+    def test_is_idempotent(self):
+        once = _relax_apk_version_pins(self.GO_BLOCK)
+        assert _relax_apk_version_pins(once) == once
+
+    def test_full_generation_relaxes_the_go_pin(
+        self, tmp_path,
+    ):
+        template_file = tmp_path / "Dockerfile"
+        template_file.write_text(
+            MINIMAL_TEMPLATE, encoding="utf-8",
+        )
+        installs = {
+            "apk": [],
+            "npm": [],
+            "pip": {},
+            "gem": [],
+            "cargo": [],
+            "dockerfile": [
+                "ARG GO_ALPINE_VERSION=1.26.3-r0",
+                (
+                    "RUN apk add --no-cache \\\n"
+                    "    go=${GO_ALPINE_VERSION}"
+                ),
+            ],
+        }
+        result = generate_dockerfile(
+            template_file, installs, "test",
+        )
+        assert '"go>=${GO_ALPINE_VERSION}"' in result
+        assert "go=${GO_ALPINE_VERSION}" not in result
+        assert "ARG GO_ALPINE_VERSION=1.26.3-r0" in result
