@@ -1,0 +1,18 @@
+.lycheeignore
+  h_4db53f42b9be42 1-37
+.mega-linter.d/.lycheeignore
+  h_4db53f42b9be42 1-33
+README.md
+  h_4db53f42b9be42 35,280-290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4f18ebe8852bf64800fcf8bb0a4f60f4d9b0301d",
+  "prompts": {},
+  "humans": {
+    "h_4db53f42b9be42": {
+      "author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}
