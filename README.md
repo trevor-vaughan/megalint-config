@@ -32,7 +32,7 @@ The canonical artifact is `.mega-linter.yml` — designed to be consumed by othe
 >
 > - `MAKEFILE_CHECKMAKE` — **Makefile linting is no longer available** from MegaLinter at all. No replacement exists.
 > - `API_SPECTRAL` — **OpenAPI/AsyncAPI spec linting is no longer available.** No replacement exists.
-> - `MARKDOWN_MARKDOWN_LINK_CHECK` — replaced by `SPELL_LYCHEE`, which is enabled in its place. Note that link checking makes outbound network requests, so it is subject to rate limits and third-party outages.
+> - `MARKDOWN_MARKDOWN_LINK_CHECK` — replaced by `SPELL_LYCHEE`, which is enabled in its place. Note that link checking makes outbound network requests, so it is subject to rate limits and third-party outages. It also reads links literally, so URLs built from `${{ ... }}` or `${VAR}` placeholders are checked unexpanded and fail — the shared `.lycheeignore` excludes those; see "Link-check exclusions" below.
 >
 > If you relied on the first two, the capability went away upstream rather than being dropped from this profile. See [Removed linters](https://megalinter.io/latest/removed-linters/).
 
@@ -276,6 +276,17 @@ A target repo can supply its own files at the workspace root to override the sha
 - **Sub-configs** (anything in `.mega-linter.d/`) — same rule: if the target supplies its own copy at its repo root, the runner uses the target's; otherwise the shared copy from `.mega-linter.d/` is overlaid.
 
 Adding a new shared sub-config: drop the file into `.mega-linter.d/`. The runner auto-discovers everything in that directory — no code or Taskfile changes required.
+
+### Link-check exclusions
+
+`SPELL_LYCHEE` reads links literally, which produces failures for URLs that cannot resolve as written:
+
+- URLs assembled at runtime. A shell `${VAR}` is never substituted, and a GitHub Actions `${{ ... }}` expression truncates at the `$` because `{` is not a valid URL character — so `https://github.com/${{ github.repository }}` is checked as `https://github.com/$` and 404s.
+- Namespace identifiers that look like links, such as the in-toto predicate type URIs passed to `cosign attest --type=`. `cosign.sigstore.dev` has no DNS record at all.
+
+The shared `.mega-linter.d/.lycheeignore` excludes both classes. Each line is a regular expression matched against the extracted URL.
+
+Note the override semantics differ from the other sub-configs in one respect: lychee reads a single `.lycheeignore`, so a target repo that ships its own **replaces** the shared one rather than extending it. Copy the shared entries across before adding your own — this repo's root `.lycheeignore` is an example of that pattern.
 
 ## Working with SARIF output
 
