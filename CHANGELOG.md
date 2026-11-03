@@ -5,7 +5,18 @@ generated from [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org); do not edit it by hand — run
 `task release:bump` instead.
 
-## [0.6.0] - 2026-09-09
+## [0.7.0] - 2026-11-03
+
+### ⚙️ Miscellaneous Tasks
+
+- *(deps)* Bump Python lockfile and GitHub Actions pins
+- *(deps)* Bump MegaLinter base to 10.2.0, free-disk-space v2, codeql v4.39.2
+- *(deps)* Bump MegaLinter base image and MEGALINTER_VERSION default from 10.0.0 to 10.2.0
+  - Updates the Taskfile default, release workflow input, README, docs, and test cache paths to match
+- *(ci)* Bump jlumbroso/free-disk-space from v1.3.1 to v2.0.0 across all three workflows
+- *(ci)* Bump github/codeql-action/upload-sarif from v4.36.2 to v4.39.2
+
+## [0.6.0] - 2026-09-10
 
 ### 🚀 Features
 
@@ -27,6 +38,7 @@ generated from [Conventional Commits](https://www.conventionalcommits.org) by
 - *(config)* Drop linters v10 removed outright
   - MAKEFILE_CHECKMAKE and API_SPECTRAL are gone with their descriptors, so Makefile and OpenAPI linting are no longer available from MegaLinter at all — the config records the gap so it does not read as an oversight. The REPOSITORY_GITLEAKS and REPOSITORY_KICS disables go too, since naming a linter that cannot run only costs a startup notice.
 - *(flavor)* Relax upstream's exact Alpine package pins to a floor
+- *(lint)* Exclude unresolvable URLs from lychee link checks
 
 ### 📚 Documentation
 
@@ -40,6 +52,10 @@ generated from [Conventional Commits](https://www.conventionalcommits.org) by
 - *(config)* Note that v10 removed REPOSITORY_GITLEAKS outright
 - Bump version references from 9.6.0 to 10.0.0
   - Covers the flavor generation guide, the published image tags, and the v9 image example in the release workflow comment.
+- *(flavor)* Explain the Alpine pin relaxation in the generation guide
+  - Includes how to move the floor deliberately: bump MEGALINTER_VERSION to an upstream release carrying the version you want
+- *(readme)* Add a "Link-check exclusions" section
+  - Lychee reads exactly one .lycheeignore, so a target repo shipping its own replaces the shared file instead of extending it. Copy the shared entries across when overriding.
 
 ### 🧪 Testing
 
@@ -48,6 +64,8 @@ generated from [Conventional Commits](https://www.conventionalcommits.org) by
   - Asserts build-only packages stay out of the shipped image, that the open block carries no dangling line continuation, and that a flavor without apk_build generates unchanged output.
 - *(config)* Add a removed-linter guard and cover the new options
   - V10 keeps removed keys valid in the JSON schema, so a stale entry whose descriptor survives passes every other check. An explicit list from upstream's removed_linters.py catches those. The KICS test narrows to absence from ENABLE_LINTERS, which is the assertion that was ever load-bearing — the flavor is generated from that list alone — and the security rationale moves into a config comment.
+- *(flavor)* Cover the pin rewrite, its quoting, and what it must not touch
+  - Shell assignments, URL query strings, unpinned packages and non-apk lines stay as they are; the rewrite is idempotent, and a full generation run asserts the go pin comes out relaxed
 
 ### ⚙️ Miscellaneous Tasks
 
