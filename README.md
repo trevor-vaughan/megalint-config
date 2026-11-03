@@ -396,7 +396,7 @@ Each release publishes three tags:
 | Tag            | Example          | Meaning                                                  |
 | -------------- | ---------------- | -------------------------------------------------------- |
 | `latest`       | `latest`         | Most recent build from `main`                            |
-| `<semver>`     | `10.0.0`         | Matches the upstream MegaLinter version used as the base |
+| `<semver>`     | `10.2.0`         | Matches the upstream MegaLinter version used as the base |
 | `sha-<commit>` | `sha-abc1234...` | Pinned to the exact commit that triggered the build      |
 
 Pin to a semver tag for reproducibility; use `latest` only in development or when you want automatic upstream tracking.
@@ -462,7 +462,7 @@ docker pull ghcr.io/trevor-vaughan/megalinter-custom-flavor:latest
 Or reference it in a CI workflow:
 
 ```yaml
-container: ghcr.io/trevor-vaughan/megalinter-custom-flavor:10.0.0
+container: ghcr.io/trevor-vaughan/megalinter-custom-flavor:10.2.0
 ```
 
 ### Validation workflow

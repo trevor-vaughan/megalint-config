@@ -26,7 +26,7 @@ This creates a `./custom-flavor/` directory with all necessary files using defau
 
 - Configuration file: `.mega-linter.yml`
 - Flavor name: `shared-config`
-- Base image: the upstream MegaLinter image at the pinned `MEGALINTER_VERSION` (default `10.0.0`), which the generator clones and extends
+- Base image: the upstream MegaLinter image at the pinned `MEGALINTER_VERSION` (default `10.2.0`), which the generator clones and extends
 
 ### Custom Configuration
 
@@ -42,7 +42,7 @@ task flavor:generate \
 To build against a different upstream MegaLinter version, set `MEGALINTER_VERSION` (it re-clones the pinned source the flavor extends):
 
 ```bash
-task flavor:generate MEGALINTER_VERSION=10.0.0
+task flavor:generate MEGALINTER_VERSION=10.2.0
 ```
 
 ### Validation and Testing
@@ -95,7 +95,7 @@ task flavor:test
 | `CONFIG_FILE`        | `.mega-linter.yml` | MegaLinter configuration file path                          |
 | `OUTPUT_DIR`         | `./custom-flavor`  | Output directory for generated files                        |
 | `FLAVOR_NAME`        | `shared-config`    | Name of the custom flavor                                   |
-| `MEGALINTER_VERSION` | `10.0.0`           | Upstream MegaLinter version to clone and extend as the base |
+| `MEGALINTER_VERSION` | `10.2.0`           | Upstream MegaLinter version to clone and extend as the base |
 
 #### `flavor:validate`
 
@@ -343,7 +343,7 @@ task flavor:generate \
   CONFIG_FILE=.mega-linter-enterprise.yml \
   FLAVOR_NAME=enterprise-standard \
   OUTPUT_DIR=./dist/enterprise-linter \
-  MEGALINTER_VERSION=10.0.0
+  MEGALINTER_VERSION=10.2.0
 
 # Validate
 task flavor:validate \

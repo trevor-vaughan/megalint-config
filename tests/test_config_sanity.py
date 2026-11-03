@@ -33,10 +33,10 @@ CHECKOV_ROOT_CONFIG = REPO_ROOT / ".checkov.yml"
 CHECKOV_SHARED_CONFIG = REPO_ROOT / ".mega-linter.d" / ".checkov.yml"
 EXTRACTOR = REPO_ROOT / ".taskfiles" / "scripts" / "changed-enable-linters.sh"
 MEGALINTER_CONFIG_PY = (
-    REPO_ROOT / ".cache" / "megalinter-v10.0.0" / "megalinter" / "config.py"
+    REPO_ROOT / ".cache" / "megalinter-v10.2.0" / "megalinter" / "config.py"
 )
 MEGALINTER_LINTER_PY = (
-    REPO_ROOT / ".cache" / "megalinter-v10.0.0" / "megalinter" / "Linter.py"
+    REPO_ROOT / ".cache" / "megalinter-v10.2.0" / "megalinter" / "Linter.py"
 )
 
 # Upstream's DEFAULT_LINTER_TIMEOUT_SECONDS (megalinter/Linter.py). Copied
