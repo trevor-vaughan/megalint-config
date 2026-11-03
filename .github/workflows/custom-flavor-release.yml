@@ -9,7 +9,7 @@ name: Custom Flavor Release
   workflow_dispatch:
     inputs:
       base_image:
-        description: "Base MegaLinter image (e.g. ghcr.io/oxsecurity/megalinter:v10.0.0)"
+        description: "Base MegaLinter image (e.g. ghcr.io/oxsecurity/megalinter:v10.2.0)"
         required: false
         default: ""
         type: string
@@ -17,7 +17,7 @@ name: Custom Flavor Release
 # Pin to the same version PR validation clones (.taskfiles/flavor.yml
 # MEGALINTER_VERSION). Bump both together to adopt a new upstream base.
 env:
-  DEFAULT_BASE_IMAGE: ghcr.io/oxsecurity/megalinter:v10.0.0
+  DEFAULT_BASE_IMAGE: ghcr.io/oxsecurity/megalinter:v10.2.0
 
 permissions:
   contents: write # gh release create
@@ -55,7 +55,7 @@ jobs:
       # runtimes and toolchains this job never uses; tool-cache is kept
       # (action default) so setup-uv/setup-task binaries survive.
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
 
       - name: Verify actor has write access
         env:
