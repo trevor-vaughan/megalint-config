@@ -1,0 +1,27 @@
+.github/workflows/megalinter.yml
+  s_bc726280844948::t_96de79bde26076 68
+.github/actions/setup-build-env/action.yml
+  s_bc726280844948::t_3b8459d485cc01 20
+.github/workflows/custom-flavor-release.yml
+  s_bc726280844948::t_96de79bde26076 223,226,238,290,385
+.github/workflows/custom-flavor-validate.yml
+  s_bc726280844948::t_96de79bde26076 93,145,154,160
+uv.lock
+  s_bc726280844948::t_d27200c1e87408 2,28,30,32,49,51,53-187,215,217,219,224,226,228,233,235,237,242,253,255,324,326,328-391,396,398,400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a09c4ec9a3ca298b18c32bb7cf9e753c9e7a5f9b",
+  "prompts": {},
+  "sessions": {
+    "s_bc726280844948": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8b50e16c-a9f6-4fa1-830a-1bc00e7970ee",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}
