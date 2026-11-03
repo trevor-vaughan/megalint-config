@@ -1,0 +1,33 @@
+README.md
+  s_bc726280844948::t_438ca89cce4073 399,465
+tests/test_config_sanity.py
+  s_bc726280844948::t_4ef122a490a300 36,39
+docs/custom-flavor-generation.md
+  s_bc726280844948::t_e96c3351acdc4b 29,45,98,346
+.github/workflows/custom-flavor-validate.yml
+  s_bc726280844948::t_4b9100d3cbaf4e 133
+.github/workflows/megalinter.yml
+  s_bc726280844948::t_4b9100d3cbaf4e 43
+  s_bc726280844948::t_56261982c5a604 79
+.github/workflows/custom-flavor-release.yml
+  s_bc726280844948::t_145d2b4f342974 12,20
+  s_bc726280844948::t_4b9100d3cbaf4e 58
+.taskfiles/flavor.yml
+  s_bc726280844948::t_cec7199dd7849f 4,10-11,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7f746b0b4cef1cfe317b1dcc8ae287465d12e482",
+  "prompts": {},
+  "sessions": {
+    "s_bc726280844948": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8b50e16c-a9f6-4fa1-830a-1bc00e7970ee",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}
