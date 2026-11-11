@@ -1,0 +1,23 @@
+tests/test_megalinter_workflow.py
+  s_b3c7ca2d18ab19::t_caf6a4c87106a6 12
+  s_b3c7ca2d18ab19::t_33d83e461c3e5e 119-126
+.github/actions/setup-build-env/action.yml
+  s_b3c7ca2d18ab19::t_6ac85147f73bbe 37
+  s_b3c7ca2d18ab19::t_e996953851ff01 32-36,38-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "284b048349db9637346b3458d1c1651c7525cada",
+  "prompts": {},
+  "sessions": {
+    "s_b3c7ca2d18ab19": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c2adc5d5-077d-416b-8278-d4cfde745dc6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}
