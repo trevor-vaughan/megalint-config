@@ -35,3 +35,19 @@
 # for the repository-scan attestation. Same rule as above: an identifier, not a
 # document. megalinter.io serves 404 for the path.
 ^https://megalinter\.io/attestation/
+
+# -----------------------------------------------------------------------------
+# Local and non-routable addresses
+# -----------------------------------------------------------------------------
+# Example URLs for dev servers, internal services and cloud metadata endpoints
+# only resolve on the author's machine or inside a private network; nothing
+# answers for them in the linter container, so a failure says nothing about
+# link health. Each rule allows an optional port and path/query/fragment.
+# loopback and unspecified hosts
+^https?://(([a-z0-9-]+\.)*localhost|127(\.[0-9]{1,3}){3}|0\.0\.0\.0)(:[0-9]+)?([/?#]|$)
+# IPv4 private (RFC 1918) and link-local (169.254/16, incl. cloud metadata)
+^https?://(10(\.[0-9]{1,3}){3}|172\.(1[6-9]|2[0-9]|3[01])(\.[0-9]{1,3}){2}|192\.168(\.[0-9]{1,3}){2}|169\.254(\.[0-9]{1,3}){2})(:[0-9]+)?([/?#]|$)
+# IPv6 loopback/unspecified, unique-local fc00::/7, link-local fe80::/10
+^https?://\[(::1?|0{1,4}(:0{1,4}){6}:0{0,3}[01]|f[cd][0-9a-f]{2}:[0-9a-f:.]*|fe[89ab][0-9a-f]:[0-9a-f:.]*)\](:[0-9]+)?([/?#]|$)
+# reserved/local-only TLDs
+^https?://([a-z0-9-]+\.)+(test|example|invalid|local|internal|home\.arpa)(:[0-9]+)?([/?#]|$)
