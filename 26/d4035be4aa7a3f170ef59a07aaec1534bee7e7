@@ -1,0 +1,35 @@
+ci/gitlab/megalint.yml
+  s_b3c7ca2d18ab19::t_c50ade89d15f6c 21,23
+tests/changelog-body-bullets.bats
+  s_b3c7ca2d18ab19::t_c50ade89d15f6c 25,54
+.github/workflows/custom-flavor-validate.yml
+  s_b3c7ca2d18ab19::t_c50ade89d15f6c 154
+.github/workflows/custom-flavor-release.yml
+  s_b3c7ca2d18ab19::t_c50ade89d15f6c 153,189,226,238,244,339,364,377
+ci/gitlab/run.sh
+  s_b3c7ca2d18ab19::t_c50ade89d15f6c 14
+docs/dev/releasing.md
+  s_b3c7ca2d18ab19::t_c50ade89d15f6c 113
+action.yml
+  s_b3c7ca2d18ab19::t_c50ade89d15f6c 107,112,115
+.taskfiles/scripts/release-bump.sh
+  s_b3c7ca2d18ab19::t_c50ade89d15f6c 10,128-129,202
+.github/workflows/megalinter.yml
+  s_b3c7ca2d18ab19::t_c50ade89d15f6c 79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "26d4035be4aa7a3f170ef59a07aaec1534bee7e7",
+  "prompts": {},
+  "sessions": {
+    "s_b3c7ca2d18ab19": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c2adc5d5-077d-416b-8278-d4cfde745dc6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}
