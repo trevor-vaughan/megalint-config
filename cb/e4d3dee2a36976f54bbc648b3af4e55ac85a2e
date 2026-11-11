@@ -1,0 +1,26 @@
+README.md
+  s_ff1d22c4216ba0::t_58b05efeba90fa 286
+  s_ff1d22c4216ba0::t_15c7c8e3c183e7 288
+.mega-linter.d/.lycheeignore
+  s_ff1d22c4216ba0::t_f07ebe6522cf75 34-35,37
+  s_ff1d22c4216ba0::t_58b05efeba90fa 36,38-49
+.lycheeignore
+  s_ff1d22c4216ba0::t_f07ebe6522cf75 38-39,41
+  s_ff1d22c4216ba0::t_58b05efeba90fa 40,42-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cbe4d3dee2a36976f54bbc648b3af4e55ac85a2e",
+  "prompts": {},
+  "sessions": {
+    "s_ff1d22c4216ba0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0c39e7ed-8185-4022-b5a3-a8b8ccb951dd",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}
