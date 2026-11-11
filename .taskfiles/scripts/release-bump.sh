@@ -7,7 +7,7 @@
 #
 # Env:
 #   ROOT_DIR              repository to operate on (default: this checkout)
-#   GIT_CLIFF             git-cliff command (default: uvx git-cliff@2.13.1)
+#   GIT_CLIFF             git-cliff command (default: uvx git-cliff@2.14.2)
 #   RELEASE_BUMP_LIB_ONLY when set, define functions and return without acting
 set -euo pipefail
 
@@ -125,8 +125,8 @@ if [[ -n "${RELEASE_BUMP_LIB_ONLY:-}" ]]; then
 fi
 
 ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-GIT_CLIFF="${GIT_CLIFF:-uvx git-cliff@2.13.1}"
-GIT_CLIFF_VERSION="2.13.1"
+GIT_CLIFF="${GIT_CLIFF:-uvx git-cliff@2.14.2}"
+GIT_CLIFF_VERSION="2.14.2"
 
 # Accepted input: semver with an optional pre-release. The real gate is the
 # PEP 440 normalisation below — this only rejects obvious nonsense early.
@@ -199,7 +199,7 @@ elif [[ "${last_tag#v}" != "${current_tag}" ]]; then
 	suggested="$(patch_bump "${current_semver}")"
 else
 	# Unquoted on purpose: the default is the two-word command
-	# `uvx git-cliff@2.13.1` and has to split into argv.
+	# `uvx git-cliff@2.14.2` and has to split into argv.
 	# shellcheck disable=SC2086
 	suggested="$(${GIT_CLIFF} --config "${ROOT_DIR}/cliff.toml" --repository "${ROOT_DIR}" --bumped-version 2>/dev/null || true)"
 	suggested="${suggested#v}"

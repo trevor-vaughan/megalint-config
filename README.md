@@ -283,8 +283,9 @@ Adding a new shared sub-config: drop the file into `.mega-linter.d/`. The runner
 
 - URLs assembled at runtime. A shell `${VAR}` is never substituted, and a GitHub Actions `${{ ... }}` expression truncates at the `$` because `{` is not a valid URL character — so `https://github.com/${{ github.repository }}` is checked as `https://github.com/$` and 404s.
 - Namespace identifiers that look like links, such as the in-toto predicate type URIs passed to `cosign attest --type=`. `cosign.sigstore.dev` has no DNS record at all.
+- Local and non-routable addresses in example URLs: `localhost`, loopback and unspecified (`127.0.0.0/8`, `0.0.0.0`, `[::1]`, `[::]`), private and link-local ranges (RFC 1918, `169.254.0.0/16`, IPv6 `fc00::/7` and `fe80::/10`), and reserved TLDs (`.test`, `.example`, `.invalid`, `.local`, `.internal`, `.home.arpa`). Nothing answers for these in the linter container.
 
-The shared `.mega-linter.d/.lycheeignore` excludes both classes. Each line is a regular expression matched against the extracted URL.
+The shared `.mega-linter.d/.lycheeignore` excludes all three classes. Each line is a regular expression matched against the extracted URL.
 
 Note the override semantics differ from the other sub-configs in one respect: lychee reads a single `.lycheeignore`, so a target repo that ships its own **replaces** the shared one rather than extending it. Copy the shared entries across before adding your own — this repo's root `.lycheeignore` is an example of that pattern.
 

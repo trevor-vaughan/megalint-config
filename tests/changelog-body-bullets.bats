@@ -22,7 +22,7 @@ setup() {
   export GIT_COMMITTER_NAME="megalint-config tests"
   export GIT_COMMITTER_EMAIL="megalint-config@invalid"
 
-  GIT_CLIFF="${GIT_CLIFF:-uvx git-cliff@2.13.1}"
+  GIT_CLIFF="${GIT_CLIFF:-uvx git-cliff@2.14.2}"
   export GIT_CLIFF
 
   ROOT_DIR="${BATS_TEST_TMPDIR}/repo"
@@ -51,7 +51,7 @@ commit_message() {
 # written into every expectation.
 render() {
   # Unquoted on purpose: the default is the two-word command
-  # `uvx git-cliff@2.13.1` and has to split into argv.
+  # `uvx git-cliff@2.14.2` and has to split into argv.
   # shellcheck disable=SC2086
   ${GIT_CLIFF} \
     --config "${REPO_ROOT}/cliff.toml" \

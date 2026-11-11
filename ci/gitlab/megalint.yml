@@ -18,9 +18,9 @@
 # see ci/gitlab/README.md for the full caller example.
 
 .megalint:
-  image: "docker:27"
+  image: "docker:29"
   services:
-    - "docker:27-dind"
+    - "docker:29-dind"
   variables:
     MEGALINT_WORKING_DIRECTORY: "$CI_PROJECT_DIR"
     MEGALINT_VALIDATE_ALL_CODEBASE: "false"

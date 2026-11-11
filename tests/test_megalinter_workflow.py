@@ -9,6 +9,7 @@ and the duplicate feature-branch push that produced that SARIF cannot occur,
 and the upload step is additionally gated on the report having results.
 """
 
+import re
 from pathlib import Path
 
 import yaml
@@ -113,6 +114,14 @@ def test_setup_build_env_installs_bats():
     steps = action["runs"]["steps"]
     joined = " ".join(str(s.get("run", "")) + str(s.get("name", "")) for s in steps)
     assert "bats" in joined, "setup-build-env must install bats for the shell test gate"
+
+
+def test_setup_build_env_installs_bats_from_pinned_commit_without_apt():
+    action = _load(Path(".github/actions/setup-build-env/action.yml"))
+    step = next(s for s in action["runs"]["steps"] if s.get("name") == "Install bats")
+    assert "apt-get" not in step["run"], "runner apt mirrors are unreliable; fetch bats-core directly"
+    assert re.fullmatch(r"[0-9a-f]{40}", step["env"]["BATS_COMMIT"]), "pin bats-core to a full commit SHA"
+    assert '"${BATS_COMMIT}"' in step["run"], "the checked-out commit must be verified against BATS_COMMIT"
 
 
 def test_check_task_runs_bats_runner():

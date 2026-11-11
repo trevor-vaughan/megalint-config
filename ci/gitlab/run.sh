@@ -11,7 +11,7 @@ set -euo pipefail
 : "${MEGALINT_VERIFY:=}"
 
 # Pin Task version. Update via Task 0 verification process when bumping.
-TASK_VERSION='v3.51.1'
+TASK_VERSION='v3.54.0'
 
 # Install Task to /usr/local/bin. The installer flag for bindir is -b
 # (not -d -b — -d is the installer's debug flag, easy mistake to make).
