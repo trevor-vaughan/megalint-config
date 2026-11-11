@@ -110,7 +110,7 @@ The alternative — excluding rc tags from the changelog — would leave pre-rel
 
 The bump tests build throwaway repositories with a stub git-cliff, so they touch neither the real checkout nor the network, and they pin `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM` to `/dev/null` so the caller's git identity cannot leak in.
 
-`tests/changelog-body-bullets.bats` is the exception: the behaviour under test _is_ `cliff.toml`, which a stub cannot exercise, so it runs the real git-cliff against throwaway repositories. Override the command with `GIT_CLIFF` if `uvx git-cliff@2.13.1` is not how this machine reaches it.
+`tests/changelog-body-bullets.bats` is the exception: the behaviour under test _is_ `cliff.toml`, which a stub cannot exercise, so it runs the real git-cliff against throwaway repositories. Override the command with `GIT_CLIFF` if `uvx git-cliff@2.14.2` is not how this machine reaches it.
 
 Every negative case asserts the working tree is unmodified afterwards — a guard that aborts after a partial write is worse than no guard.
 
